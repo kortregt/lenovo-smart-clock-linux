@@ -25,7 +25,8 @@ soldering anything. A USB-A-to-USB-A cable is the only extra hardware.
 | Clock face | ✅ | LVGL: time, date, weather, forecast on tap; see [08](docs/08-display.md#the-clock-face) |
 | Automatic brightness | ✅ | Light sensor → backlight, smooth fades; see [08](docs/08-display.md#automatic-brightness) |
 | Touchscreen | ✅ | Tap for the forecast; see [08](docs/08-display.md#touch) |
-| Buttons, accelerometer | ⏳ | Drivers load; not wired into anything yet |
+| Buttons + mic switch | ✅ | Volume up/down (hardware amp volume); combos configurable; see [07](docs/07-audio.md#volume-and-buttons) |
+| Accelerometer | ⏳ | Not wired into anything yet |
 | Bluetooth | ⏳ | Module built, untested |
 | Home Assistant | 🟡 | Weather from Home Assistant on the clock face; see [09](docs/09-home-assistant.md) |
 
@@ -43,7 +44,8 @@ A reference of every chip, bus address, GPIO and partition found along the way i
                   ├─ audio-init: TAS5805M amp + TLV320ADC3101 mics over I2C
                   ├─ clockface: LVGL clock on /dev/fb0
                   ├─ ha-poll: weather from Home Assistant for the clock face
-                  └─ autobright: backlight from the light sensor
+                  ├─ autobright: backlight from the light sensor
+                  └─ clockkeys: buttons (volume) and the mic switch
  slot A: untouched stock Android Things    -> `fastboot set_active a` to go back
 ```
 

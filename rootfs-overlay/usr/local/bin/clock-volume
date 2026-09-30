@@ -1,0 +1,39 @@
+#!/bin/sh
+# Speaker volume, using the TAS5805M amp's own digital volume (register 0x4C, 0.5 dB steps;
+# 0x30 = 0 dB, 0xFF = mute). Levels 0-20: 20 = 0 dB, each step down is 2.5 dB, 0 = mute.
+# The level is saved in /var/lib/clock/volume and published in /run/clock/volume (which the
+# clock face watches to show a volume bar).
+#
+#   clock-volume [get | up | down | set LEVEL | restore]
+MAX=20
+DEFAULT=12
+SAVE=/var/lib/clock/volume
+PUB=/run/clock/volume
+
+level=$(cat $SAVE 2>/dev/null)
+case "$level" in ''|*[!0-9]*) level=$DEFAULT ;; esac
+
+case "${1:-get}" in
+get)	echo $level; exit 0 ;;
+up)	level=$((level + 1)) ;;
+down)	level=$((level - 1)) ;;
+set)	case "$2" in ''|*[!0-9]*) echo "usage: clock-volume set 0-$MAX" >&2; exit 2 ;; esac
+	level=$2 ;;
+restore) ;;
+*)	echo "usage: clock-volume [get | up | down | set LEVEL | restore]" >&2; exit 2 ;;
+esac
+[ $level -gt $MAX ] && level=$MAX
+[ $level -lt 0 ] && level=0
+
+if [ $level -eq 0 ]; then
+	reg=0xff
+else
+	reg=$(printf '0x%02x' $((0x30 + (MAX - level) * 5)))
+fi
+# book 0, page 0, then the volume register
+i2ctransfer -y -f 2 w2@0x2c 0x00 0x00 w2@0x2c 0x7f 0x00 w2@0x2c 0x00 0x00 w2@0x2c 0x4c $reg || exit 1
+
+mkdir -p ${SAVE%/*} ${PUB%/*}
+echo $level > $SAVE
+echo $level > $PUB.tmp && mv $PUB.tmp $PUB
+echo $level

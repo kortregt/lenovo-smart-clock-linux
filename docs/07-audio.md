@@ -67,6 +67,22 @@ written with `i2ctransfer`, 40 writes per call.
 - Each recording starts with a short click while the ADC settles.
 - Volume is register `0x4c`: `0x30` is 0 dB, each step up is −0.5 dB.
 
+## Volume and buttons
+
+[`clock-volume`](../rootfs-overlay/usr/local/bin/clock-volume) sets the amp's own digital
+volume (`0x4c`) in 21 levels: 20 is 0 dB, each step down is 2.5 dB, 0 is mute. The level is
+saved across reboots (restored by `rcS` after `audio-init`) and published in
+`/run/clock/volume`. `clock-volume up`, `down`, `set N` or `get`.
+
+The buttons aren't input devices on this kernel; Android Things read them as GPIOs (the pins
+are in the stock app's resources: `VolumeUpGpio` GPIO42, `VolumeDownGpio` GPIO576,
+`MicGpio` GPIO23). [`userspace/clockkeys.c`](../userspace/clockkeys.c) watches them with
+GPIO edge interrupts and runs a command per gesture from
+[`/etc/clock/keys.conf`](../rootfs-overlay/etc/clock/keys.conf): `VOLUP`/`VOLDOWN` (press,
+repeating while held), `BOTH`, `BOTH_LONG` (2 s), and `MIC_OFF`/`MIC_ON` for the switch on
+the back (also in `/run/clock/mic`). A press waits 150 ms for the other button, so pressing
+both doesn't change the volume. Volume up and down are the only actions set so far.
+
 ## Other chips the app drives
 
 The same app also talks to a **Bosch BMA253 accelerometer** (`0-0018`, chip ID `0xfa`;

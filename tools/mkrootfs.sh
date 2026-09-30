@@ -60,6 +60,9 @@ install -m 755 "$BUILD/clockface-out/clockface" rootfs/usr/local/bin/clockface
 # Backlight from the ambient light sensor, also started from inittab.
 aarch64-linux-gnu-gcc -O2 -static -Wall -o rootfs/usr/local/bin/autobright \
 	"$PROJ/userspace/autobright.c" -lm
+# Buttons and mic switch.
+aarch64-linux-gnu-gcc -O2 -static -Wall -o rootfs/usr/local/bin/clockkeys \
+	"$PROJ/userspace/clockkeys.c"
 
 mkdir -p -m 700 rootfs/root/.ssh
 cp "$SSH_PUBKEY" rootfs/root/.ssh/authorized_keys

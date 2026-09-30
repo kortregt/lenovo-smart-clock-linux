@@ -26,12 +26,17 @@ numbers are `387 + SoC pin` (the SoC GPIO chip's base on this kernel).
 | Accelerometer | Bosch BMA253 | i2c-0 `0x18` | None |
 | Light/proximity | Lite-On LTR-578ALS (`PART_ID` 0xB1) | i2c-0 `0x53` | No driver; read from userspace by `autobright` ([08](08-display.md#automatic-brightness)) |
 | Wi-Fi / BT | MediaTek MT7668 | SDIO `mmc1` (`037a:7668` / `037a:7608`) | Modules + vendor firmware ([06](06-wifi.md)) |
-| Buttons | MT6392 keys | `mtk-pmic-keys` | Kernel driver |
+| Volume up button | SoC GPIO 42 (gpio 429), low while pressed | GPIO | `clockkeys` ([07](07-audio.md#volume-and-buttons)) |
+| Volume down button | MT6392 PMIC home key, exported as gpio 576, high while pressed | `mtk-pmic-keys` turns it into a GPIO, not a key | `clockkeys` |
+| Mic switch | SoC GPIO 23 (gpio 410), low when the mics are off | GPIO | `clockkeys` |
 | RGB LED | — | `/sys/class/leds/{red,green,blue}` | Kernel driver |
 | USB | MUSB (`musb-hdrc`), USB 2.0 on a USB-A port | Device mode via `swmode` | Gadget: ACM + ECM |
 | UART | ttyMT0 on USB-A pins 5/6 | 1.8 V, 921600 8N1 | Not used here |
 
-Other GPIOs used by the stock app: 15 and 16 (likely the mic-mute and camera switches).
+Other GPIOs used by the stock app: 15 and 16 are the BMA253 accelerometer's tap
+interrupts; 107 enables the amp. The SoC keypad controller (`keypad@10002000`, mapping
+volume up and mute) is disabled in the device tree: Android Things read the buttons as
+GPIOs, and the PMIC key driver hands the volume-down key to a GPIO chip for the same reason.
 
 ## ALSA
 

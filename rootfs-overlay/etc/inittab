@@ -9,6 +9,8 @@ ttyGS0::respawn:/sbin/getty -n -l /usr/local/bin/autologin 0 ttyGS0 vt100
 ::respawn:/usr/local/bin/ha-poll
 # Backlight from the ambient light sensor.
 ::respawn:/usr/local/bin/autobright
+# Buttons and mic switch (actions in /etc/clock/keys.conf).
+::respawn:/usr/local/bin/clockkeys
 ::respawn:/sbin/watchdog -F -t 5 -T 30 /dev/watchdog
 ::shutdown:/etc/clock/rc.shutdown
 ::ctrlaltdel:/sbin/reboot
