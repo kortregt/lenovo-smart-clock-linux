@@ -109,3 +109,30 @@ of the clock face shows the track, and tapping it brings the now-playing view ba
   Spotify Connect, play selects that source again, which resumes the Spotify session.
 - Home Assistant sometimes reports no position while playback changes state; the clock
   keeps the last one, so the progress bar doesn't jump back to 0:00.
+
+## Alarms
+
+Three alarms, set in Home Assistant helpers from the package
+[`homeassistant/smart_clock.yaml`](../homeassistant/smart_clock.yaml) (put it in
+`<config>/packages/` and add `packages: !include_dir_named packages` under `homeassistant:`
+in `configuration.yaml`): for each alarm an on/off switch, a time and its days (Every day,
+Weekdays, Weekends, or Once, which switches itself off after ringing), plus the alarm music
+(a Music Assistant name or URI, and its type) and volume. They're dashboard controls and can
+be used in automations.
+
+[`clock-alarm`](../rootfs-overlay/usr/local/bin/clock-alarm) (from `/etc/inittab`) reads the
+helpers every minute and keeps a copy on the clock, so alarms ring even when Home Assistant
+or the network is down. When one rings it:
+
+- pauses anything playing (a pause keeps a Spotify Connect session; it stays paused),
+- plays the alarm music through Music Assistant, from quiet up to the alarm volume over a
+  minute, or, without music or if it doesn't start within 10 s, a chime straight to the
+  speaker (`/usr/local/share/clock/chime.wav`), fading up the same way,
+- shows a Snooze / Stop screen; any button press snoozes (9 minutes), holding both stops,
+- stops by itself after 30 minutes, stops only music it started, and puts the volume back,
+- fires `smart_clock_alarm` events (`state`: ringing / snoozed / stopped; `alarm`: 1-3) for
+  automations, e.g. fading the bedroom lights up.
+
+The next alarm shows by a bell on the clock face's weather line ("5:20 PM" today, "Thu
+7:00 AM" otherwise); while snoozed it shows the snooze time, and tapping it stops the alarm.
+`clock-alarm ring` rings straight away, to try it.

@@ -21,8 +21,9 @@
  * While music plays behind the clock, a pill at the bottom shows the track; tapping it
  * brings the now-playing view back.
  *
- * Alarms (clock-alarm): the next one shows by a bell at the top right; while one rings, a
- * full-screen Snooze / Stop view covers everything; while snoozed, tapping the bell stops it.
+ * Alarms (clock-alarm): the next one shows by a bell on the weather line; while one rings,
+ * a full-screen Snooze / Stop view covers everything; while snoozed, tapping the bell
+ * stops it.
  *
  * When /run/clock/volume changes (clock-volume, from the buttons or elsewhere), a volume bar
  * shows for 2 seconds.
@@ -1103,7 +1104,7 @@ static void on_bell_tap(lv_event_t *e)
 		alarm_command("stop");
 }
 
-/* "HH:MM" (24 h) in the clock face's format */
+/* "HH:MM" (24 h) in the clock face's format; alarm times get AM / PM in 12 h mode */
 static void fmt_hm(char *out, size_t len, const char *hm)
 {
 	int h, m;
@@ -1113,7 +1114,7 @@ static void fmt_hm(char *out, size_t len, const char *hm)
 		return;
 	}
 	if (time_12h)
-		snprintf(out, len, "%d:%02d", h % 12 ? h % 12 : 12, m);
+		snprintf(out, len, "%d:%02d %s", h % 12 ? h % 12 : 12, m, h < 12 ? "AM" : "PM");
 	else
 		snprintf(out, len, "%02d:%02d", h, m);
 }
@@ -1186,8 +1187,17 @@ static void update_alarm(lv_timer_t *t)
 		char day[8] = "";
 
 		if (sscanf(next, "%7s %15s", day, hm) == 2) {
+			char today[8];
+			time_t now = time(NULL);
+			struct tm tm;
+
+			localtime_r(&now, &tm);
+			strftime(today, sizeof(today), "%a", &tm);
 			fmt_hm(line, sizeof(line), hm);
-			snprintf(text, sizeof(text), "%s %s", day, line);
+			if (!strcmp(day, today))	/* today: just the time */
+				snprintf(text, sizeof(text), "%s", line);
+			else
+				snprintf(text, sizeof(text), "%s %s", day, line);
 		}
 	}
 	set_text_if(alarm_bell_text, text);
@@ -1220,12 +1230,11 @@ static void create_alarm_views(lv_obj_t *scr, const lv_font_t *big, const lv_fon
 {
 	lv_obj_t *row, *l;
 
-	/* the bell, top right of the clock face */
-	alarm_bell = lv_obj_create(scr);
+	/* the bell: on the weather line, after the weather */
+	alarm_bell = lv_obj_create(lv_obj_get_parent(weather_icon.obj));
 	lv_obj_remove_style_all(alarm_bell);
 	lv_obj_set_size(alarm_bell, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
-	lv_obj_align(alarm_bell, LV_ALIGN_TOP_RIGHT, -24, 16);
-	lv_obj_set_style_pad_all(alarm_bell, 8, 0);
+	lv_obj_set_style_margin_left(alarm_bell, 28, 0);
 	lv_obj_set_style_pad_column(alarm_bell, 10, 0);
 	lv_obj_set_flex_flow(alarm_bell, LV_FLEX_FLOW_ROW);
 	lv_obj_set_flex_align(alarm_bell, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER,
@@ -1255,7 +1264,7 @@ static void create_alarm_views(lv_obj_t *scr, const lv_font_t *big, const lv_fon
 	lv_label_set_text(alarm_time, "");
 	lv_obj_set_style_text_font(alarm_time, big, 0);
 	lv_obj_set_style_text_color(alarm_time, lv_color_hex(0xf0f0f0), 0);
-	lv_obj_align(alarm_time, LV_ALIGN_TOP_MID, 0, -10);
+	lv_obj_align(alarm_time, LV_ALIGN_CENTER, 0, -60);	/* where the clock face has it */
 
 	row = lv_obj_create(alarm_panel);
 	lv_obj_remove_style_all(row);

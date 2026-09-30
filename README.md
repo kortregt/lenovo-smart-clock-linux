@@ -31,6 +31,7 @@ soldering anything. A USB-A-to-USB-A cable is the only extra hardware.
 | Home Assistant | 🟡 | Weather and forecast on the clock face; see [09](docs/09-home-assistant.md) |
 | Music | ✅ | Music Assistant player (squeezelite, Spotify Connect via MA); one volume shared with the buttons; see [09](docs/09-home-assistant.md#music-music-assistant) |
 | Now playing | ✅ | Cover, title, progress and touch controls; see [09](docs/09-home-assistant.md#now-playing) |
+| Alarms | ✅ | Set in Home Assistant helpers, ring offline too; music or chime, fade-in, snooze; see [09](docs/09-home-assistant.md#alarms) |
 
 A reference of every chip, bus address, GPIO and partition found along the way is in
 [docs/hardware.md](docs/hardware.md).
@@ -47,6 +48,7 @@ A reference of every chip, bus address, GPIO and partition found along the way i
                   ├─ clockface: LVGL clock on /dev/fb0
                   ├─ ha-poll: weather from Home Assistant for the clock face
                   ├─ ha-media: now playing from Home Assistant, and its controls
+                  ├─ clock-alarm: alarms from Home Assistant helpers
                   ├─ autobright: backlight from the light sensor
                   ├─ clockkeys: buttons (volume) and the mic switch
                   └─ squeezelite: Music Assistant player, volume -> amp
@@ -62,6 +64,7 @@ A reference of every chip, bus address, GPIO and partition found along the way i
 | [kernel/smartclock.config](kernel/smartclock.config) | Config options changed from stock |
 | [initramfs/](initramfs/) | The initramfs `/init` (and a tiny reboot probe used for debugging) |
 | [userspace/](userspace/) | Programs for the clock: the LVGL clock face, automatic brightness, a framebuffer test |
+| [homeassistant/](homeassistant/) | Home Assistant package: the alarm helpers |
 | [rootfs-overlay/](rootfs-overlay/) | Files layered onto Alpine: boot script, audio setup, inittab |
 | [tools/](tools/) | Build and helper scripts (boot image repack, initramfs, rootfs, diagnostics) |
 | [at_auth_unlock.py](at_auth_unlock.py) | AOSP's Android Things AVB unlock tool, fixed for Python 3 |

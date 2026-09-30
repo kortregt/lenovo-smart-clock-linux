@@ -11,9 +11,9 @@
 #   clock-alarm button       snooze if ringing (exit 0), else exit 1: for keys.conf
 #   clock-alarm ring [N]     ring now, to try it out
 #
-# Ringing plays the music through Music Assistant, starting quiet and fading up to the
-# alarm volume over a minute; without music (or if it doesn't start) a chime plays on the
-# speaker directly. Snooze is 9 minutes; ringing stops by itself after 30. The volume is put
+# Ringing pauses anything already playing (it stays paused afterwards), then plays the
+# music through Music Assistant, starting quiet and fading up to the alarm volume over a
+# minute; without music (or if it doesn't start) a chime plays on the speaker directly. Snooze is 9 minutes; ringing stops by itself after 30. The volume is put
 # back afterwards. Home Assistant gets smart_clock_alarm events (state: ringing, snoozed,
 # stopped). State for the clock face: /run/clock/alarm (state, alarm, snooze_until) and
 # /run/clock/alarm-next (the next alarm: "day HH:MM", or empty).
@@ -22,6 +22,7 @@ CACHE=/var/lib/clock/alarms
 STATE=/run/clock/alarm
 NEXT=/run/clock/alarm-next
 RINGER=/run/clock/alarm.ringer		# pid of the ringing process
+STARTED_MUSIC=/run/clock/alarm.music	# exists while the alarm's own music plays
 CHIME=/usr/local/share/clock/chime.wav
 N_ALARMS=3
 SNOOZE_S=540
@@ -116,6 +117,11 @@ ring() {	# alarm
 	/usr/local/bin/clock-volume get > /run/clock/alarm.volume	# restored afterwards
 	set_state ringing $alarm
 	ha_event ringing $alarm
+	# Pause (not stop) whatever is playing: stopping would end a Spotify Connect session
+	if [ -n "${HA_PLAYER:-}" ] && grep -qx 'state=playing' /run/clock/media 2>/dev/null; then
+		ha /api/services/media_player/media_pause "{\"entity_id\":\"$HA_PLAYER\"}" \
+			>/dev/null 2>&1
+	fi
 	(
 		trap 'exit 0' TERM
 		played=0
@@ -128,7 +134,7 @@ ring() {	# alarm
 			for i in 1 2 3 4 5 6 7 8 9 10; do
 				sleep 1
 				ha "/api/states/$HA_PLAYER" 2>/dev/null | grep -q '"state":"playing"' &&
-					{ played=1; break; }
+					{ played=1; touch $STARTED_MUSIC; break; }
 			done
 		fi
 		if [ $played = 1 ]; then
@@ -161,8 +167,12 @@ silence() {
 	fi
 	rm -f $RINGER
 	killall -q aplay 2>/dev/null
-	[ -n "${HA_PLAYER:-}" ] && ha /api/services/media_player/media_stop \
-		"{\"entity_id\":\"$HA_PLAYER\"}" >/dev/null 2>&1
+	# only stop music the alarm started itself
+	if [ -e $STARTED_MUSIC ] && [ -n "${HA_PLAYER:-}" ]; then
+		ha /api/services/media_player/media_stop "{\"entity_id\":\"$HA_PLAYER\"}" \
+			>/dev/null 2>&1
+	fi
+	rm -f $STARTED_MUSIC
 	v=$(cat /run/clock/alarm.volume 2>/dev/null)
 	case "$v" in ''|*[!0-9]*) ;; *) /usr/local/bin/clock-volume set $v >/dev/null ;; esac
 }
