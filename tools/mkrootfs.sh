@@ -1,6 +1,7 @@
 #!/bin/sh
 # Build the Alpine root filesystem image for the clock's system_b partition (512 MiB).
-# Run as root in the Linux build environment (needs qemu-aarch64 binfmt for the chroot):
+# Run as root in the Linux build environment (needs qemu-aarch64 binfmt for the chroot,
+# aarch64-linux-gnu-gcc, and LVGL v9.6 in $BUILD/lvgl for the clock face):
 #   sudo BUILD=/path/to/build SSH_PUBKEY=/path/to/id_ed25519.pub sh tools/mkrootfs.sh
 # Flash from the Mac with the clock in fastboot mode:
 #   fastboot flash system_b build/system_b-alpine.img
@@ -16,7 +17,7 @@ VENDOR=$PROJ/backup/parts/vendor_a.bin
 ALPINE=3.24.2
 TARBALL=alpine-minirootfs-$ALPINE-aarch64.tar.gz
 URL=https://dl-cdn.alpinelinux.org/alpine/v${ALPINE%.*}/releases/aarch64/$TARBALL
-PACKAGES="dropbear openssh-sftp-server wpa_supplicant iw alsa-utils i2c-tools ca-certificates tzdata"
+PACKAGES="dropbear openssh-sftp-server wpa_supplicant iw alsa-utils i2c-tools ca-certificates tzdata font-inter"
 TZ_NAME=${TZ_NAME:-America/New_York}
 SIZE=512M
 OUT=$PROJ/build/system_b-alpine.img
@@ -52,6 +53,10 @@ for fw in EEPROM_MT7668.bin TxPwrLimit_MT76x8.dat WIFI_RAM_CODE2_SDIO_MT7668.bin
 	debugfs -R "dump /firmware/$fw rootfs/lib/firmware/$fw" "$VENDOR" 2>/dev/null
 	[ -s "rootfs/lib/firmware/$fw" ] || { echo "missing firmware $fw" >&2; exit 1; }
 done
+
+# The clock face (userspace/clockface), started from inittab.
+make -s -C "$PROJ/userspace/clockface" LVGL="$BUILD/lvgl" OUT="$BUILD/clockface-out"
+install -m 755 "$BUILD/clockface-out/clockface" rootfs/usr/local/bin/clockface
 
 mkdir -p -m 700 rootfs/root/.ssh
 cp "$SSH_PUBKEY" rootfs/root/.ssh/authorized_keys

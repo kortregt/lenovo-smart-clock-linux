@@ -25,6 +25,24 @@ Two things differ from a PC framebuffer:
 
 [`userspace/fbtest.c`](../userspace/fbtest.c) draws a test image and pans.
 
+## The clock face
+
+[`userspace/clockface/`](../userspace/clockface/) is a small [LVGL](https://lvgl.io) v9.6
+program: the time in large digits and the date, in the Inter font (Alpine's `font-inter`,
+loaded with LVGL's TinyTTF so any size works). It starts from `/etc/inittab` and uses
+almost no CPU (nothing is redrawn until the minute changes) and about 3 MB of RAM.
+
+It doesn't use LVGL's own fbdev driver. Its flush callback does the two things this
+display needs: it rotates each rendered area into the sideways framebuffer (and swaps the
+red and blue bytes), and it pans after the last area of each frame.
+
+Build it in the Linux build VM (tools/mkrootfs.sh also does this for new images):
+
+```sh
+git clone -b v9.6.0 --depth 1 https://github.com/lvgl/lvgl ~/build/lvgl
+make -C userspace/clockface LVGL=~/build/lvgl OUT=~/build/clockface-out
+```
+
 ## Why `/dev/fb0` was black (the bug patch 0004 fixes)
 
 With no framebuffer handed over by the bootloader, the driver (`mtkfb`, in its
