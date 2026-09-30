@@ -16,11 +16,22 @@ Home Assistant's REST API; nothing needs to be installed in Home Assistant.
   writes `/run/clock/forecast`, one day per line: `condition|day|high|low`. Tapping the
   screen shows the next five days for 15 seconds (tap again to close it).
 
-The icons are Home Assistant's own weather icons from
-[Material Design Icons](https://pictogrammers.com/library/mdi/) (Apache 2.0): a 4 KB subset
-of the font, [`userspace/clockface/fonts/mdi-weather.ttf`](../userspace/clockface/fonts/),
-built into the clock face binary. To add icons, subset the full font again with
-`python3 -m fontTools.subset materialdesignicons-webfont.ttf --unicodes=U+F0599,...`.
+The icons are [Meteocons](https://meteocons.com) by Bas Milius (MIT): animated, full-colour
+weather icons in Lottie format, played with LVGL's Lottie player (ThorVG). The ones used
+are in [`userspace/clockface/meteocons/`](../userspace/clockface/meteocons/), fetched from
+the npm package on jsDelivr by `fetch.sh` (pinned, since 3.x is a pre-release), and built
+into the clock face binary.
+
+Animation costs CPU, since each frame is rendered in software:
+
+| | CPU (one core) |
+|---|---|
+| Weather icon under the date, animated all the time | ~22% |
+| The same, one play-through a minute (default) | ~0% between minutes |
+| Forecast shown (five icons, for 15 seconds) | ~43% |
+
+`ICON_ANIMATION` in [`/etc/clock/clockface.conf`](../rootfs-overlay/etc/clock/clockface.conf)
+chooses `always`, `minute` or `still` for the icon under the date.
 
 ## Setup
 

@@ -6,13 +6,19 @@
  * frame, because the display only composes a new frame on a pan (docs/08-display.md).
  *
  * Under the date it shows the weather from /run/clock/weather (written by ha-poll from
- * Home Assistant): the condition on the first line, drawn as a Material Design Icons
- * weather icon (fonts/mdi-weather.ttf, built into the binary), and the text on the second.
- * Hidden when that file is missing or older than 15 minutes.
+ * Home Assistant): the condition on the first line, drawn as an animated Meteocons icon
+ * (Lottie files in meteocons/, built into the binary), and the text on the second. Hidden
+ * when that file is missing or older than 15 minutes.
  *
  * Tapping the screen shows the forecast from /run/clock/forecast (also from ha-poll) for
  * 15 seconds; tapping again hides it. The touchscreen reports panel coordinates, so touches
  * are rotated the same way as the display.
+ *
+ * Settings in /etc/clock/clockface.conf:
+ *   ICON_ANIMATION=minute   the weather icon under the date: "always" animated, one
+ *                           play-through every "minute" (default), or "still". Animating
+ *                           it all the time costs ~20% of one CPU core. The forecast's
+ *                           icons always animate while it's shown.
  *
  *   clockface [-f font.ttf]
  */
@@ -41,7 +47,13 @@
 #define FORECAST_MS	15000
 #define TOUCH_DEV	"/dev/input/event1"
 
+#define CONF_FILE	"/etc/clock/clockface.conf"
+
 static const char *font_path = "/usr/share/fonts/inter/InterVariable.ttf";
+
+static enum { ANIM_ALWAYS, ANIM_MINUTE, ANIM_STILL } icon_animation = ANIM_MINUTE;
+static bool icon_playing;
+static void play_icon_once(void);
 
 static int fb_fd;
 static struct fb_var_screeninfo var;
@@ -56,32 +68,53 @@ static lv_timer_t *forecast_timer;
 static int touch_fd = -1;
 static int touch_x, touch_y, touch_down, touch_tapped;
 
-/* fonts/mdi-weather.ttf: a subset of Material Design Icons (Apache 2.0) */
-extern const unsigned char mdi_weather_ttf[], mdi_weather_ttf_end[];
-__asm__(".section .rodata\n"
-	".global mdi_weather_ttf\n.global mdi_weather_ttf_end\n"
-	"mdi_weather_ttf:\n.incbin \"fonts/mdi-weather.ttf\"\nmdi_weather_ttf_end:\n"
-	".previous\n");
+/* Meteocons Lottie animations (meteocons/, MIT), built into the binary, NUL-terminated */
+#define METEOCON(sym, file)							\
+	extern const char sym[], sym##_end[];					\
+	__asm__(".section .rodata\n.global " #sym "\n.global " #sym "_end\n"	\
+		#sym ":\n.incbin \"meteocons/" file ".json\"\n"		\
+		#sym "_end:\n.byte 0\n.previous\n");
+METEOCON(mc_clear_day, "clear-day")
+METEOCON(mc_clear_night, "clear-night")
+METEOCON(mc_partly_cloudy_day, "partly-cloudy-day")
+METEOCON(mc_partly_cloudy_night, "partly-cloudy-night")
+METEOCON(mc_cloudy, "cloudy")
+METEOCON(mc_fog, "fog")
+METEOCON(mc_hail, "hail")
+METEOCON(mc_thunderstorms, "thunderstorms")
+METEOCON(mc_thunderstorms_rain, "thunderstorms-rain")
+METEOCON(mc_extreme_rain, "extreme-rain")
+METEOCON(mc_rain, "rain")
+METEOCON(mc_snow, "snow")
+METEOCON(mc_sleet, "sleet")
+METEOCON(mc_wind, "wind")
+METEOCON(mc_code_orange, "code-orange")
+METEOCON(mc_not_available, "not-available")
 
-/* Home Assistant weather conditions -> Material Design Icons codepoints */
-static const struct { const char *condition; uint32_t codepoint; } weather_icons[] = {
-	{ "sunny", 0xF0599 },		/* weather-sunny */
-	{ "clear-night", 0xF0594 },	/* weather-night */
-	{ "partlycloudy", 0xF0595 },	/* weather-partly-cloudy */
-	{ "partlycloudy-night", 0xF0F31 }, /* weather-night-partly-cloudy */
-	{ "cloudy", 0xF0590 },		/* weather-cloudy */
-	{ "fog", 0xF0591 },		/* weather-fog */
-	{ "hail", 0xF0592 },		/* weather-hail */
-	{ "lightning", 0xF0593 },	/* weather-lightning */
-	{ "lightning-rainy", 0xF067E },	/* weather-lightning-rainy */
-	{ "pouring", 0xF0596 },		/* weather-pouring */
-	{ "rainy", 0xF0597 },		/* weather-rainy */
-	{ "snowy", 0xF0598 },		/* weather-snowy */
-	{ "snowy-rainy", 0xF067F },	/* weather-snowy-rainy */
-	{ "windy", 0xF059D },		/* weather-windy */
-	{ "windy-variant", 0xF059E },	/* weather-windy-variant */
-	{ "exceptional", 0xF05D6 },	/* alert-circle-outline */
+/* Home Assistant weather conditions -> Meteocons */
+static const struct { const char *condition, *data, *end; } weather_icons[] = {
+	{ "sunny", mc_clear_day, mc_clear_day_end },
+	{ "clear-night", mc_clear_night, mc_clear_night_end },
+	{ "partlycloudy", mc_partly_cloudy_day, mc_partly_cloudy_day_end },
+	{ "partlycloudy-night", mc_partly_cloudy_night, mc_partly_cloudy_night_end },
+	{ "cloudy", mc_cloudy, mc_cloudy_end },
+	{ "fog", mc_fog, mc_fog_end },
+	{ "hail", mc_hail, mc_hail_end },
+	{ "lightning", mc_thunderstorms, mc_thunderstorms_end },
+	{ "lightning-rainy", mc_thunderstorms_rain, mc_thunderstorms_rain_end },
+	{ "pouring", mc_extreme_rain, mc_extreme_rain_end },
+	{ "rainy", mc_rain, mc_rain_end },
+	{ "snowy", mc_snow, mc_snow_end },
+	{ "snowy-rainy", mc_sleet, mc_sleet_end },
+	{ "windy", mc_wind, mc_wind_end },
+	{ "windy-variant", mc_wind, mc_wind_end },
+	{ "exceptional", mc_code_orange, mc_code_orange_end },
 };
+
+#define ICON_SIZE	72
+#define FC_ICON_SIZE	120
+static uint32_t icon_buf[ICON_SIZE * ICON_SIZE];
+static uint32_t fc_icon_buf[FORECAST_DAYS][FC_ICON_SIZE * FC_ICON_SIZE];
 
 static uint32_t tick_ms(void)
 {
@@ -154,32 +187,53 @@ static void update_time(lv_timer_t *t)
 		lv_label_set_text(time_label, buf);
 		strftime(buf, sizeof(buf), "%A %e %B", &tm);
 		lv_label_set_text(date_label, buf);
+		if (icon_animation == ANIM_MINUTE)
+			play_icon_once();
 	}
 }
 
-/* The icon for a condition, as a UTF-8 string; empty if unknown */
-static void weather_icon_text(const char *condition, char out[5])
+/* Show the animation for a condition (Meteocons' "not available" if unknown) */
+static bool set_icon(lv_obj_t *icon, const char *condition)
 {
-	uint32_t cp = 0;
+	const char *data = mc_not_available, *end = mc_not_available_end;
 	size_t i;
 
-	for (i = 0; i < sizeof(weather_icons) / sizeof(weather_icons[0]); i++)
-		if (!strcmp(condition, weather_icons[i].condition))
-			cp = weather_icons[i].codepoint;
-	if (!cp) {
-		out[0] = 0;
-		return;
+	for (i = 0; i < sizeof(weather_icons) / sizeof(weather_icons[0]); i++) {
+		if (!strcmp(condition, weather_icons[i].condition)) {
+			data = weather_icons[i].data;
+			end = weather_icons[i].end;
+		}
 	}
-	out[0] = 0xf0 | (cp >> 18);
-	out[1] = 0x80 | ((cp >> 12) & 0x3f);
-	out[2] = 0x80 | ((cp >> 6) & 0x3f);
-	out[3] = 0x80 | (cp & 0x3f);
-	out[4] = 0;
+	if (lv_obj_get_user_data(icon) == data)
+		return false;
+	lv_obj_set_user_data(icon, (void *)data);
+	lv_lottie_set_src_data(icon, data, end - data + 1);
+	return true;
+}
+
+static lv_obj_t *weather_lottie(lv_obj_t *parent, int size, uint32_t *buf)
+{
+	lv_obj_t *icon = lv_lottie_create(parent);
+
+	lv_lottie_set_buffer(icon, size, size, buf);
+	return icon;
+}
+
+static void pause_icon(lv_obj_t *icon, bool pause)
+{
+	lv_anim_t *a = lv_lottie_get_anim(icon);
+
+	if (!a)
+		return;
+	if (pause)
+		lv_anim_pause(a);
+	else
+		lv_anim_resume(a);
 }
 
 static void update_weather(lv_timer_t *t)
 {
-	char condition[32] = "", text[96] = "", icon[5];
+	char condition[32] = "", text[96] = "";
 	struct stat st;
 	FILE *f;
 
@@ -194,9 +248,11 @@ static void update_weather(lv_timer_t *t)
 		}
 		fclose(f);
 	}
-	weather_icon_text(condition, icon);
-	if (strcmp(icon, lv_label_get_text(weather_icon)))
-		lv_label_set_text(weather_icon, icon);
+	/* a new animation starts playing; hold it still unless it should be */
+	if (*condition && set_icon(weather_icon, condition) &&
+	    icon_animation != ANIM_ALWAYS && !icon_playing)
+		pause_icon(weather_icon, true);
+	lv_obj_set_hidden(weather_icon, !*condition);
 	if (strcmp(text, lv_label_get_text(weather_label)))
 		lv_label_set_text(weather_label, text);
 }
@@ -237,7 +293,7 @@ static void touch_read_cb(lv_indev_t *indev, lv_indev_data_t *data)
 /* Fill the forecast panel from FORECAST_FILE; returns the number of days */
 static int load_forecast(void)
 {
-	char line[128], icon[5], *f[4], *p;
+	char line[128], *f[4], *p;
 	FILE *fp = fopen(FORECAST_FILE, "r");
 	int n = 0, i;
 
@@ -251,8 +307,7 @@ static int load_forecast(void)
 			if (*p)
 				*p++ = 0;
 		}
-		weather_icon_text(f[0], icon);
-		lv_label_set_text(fc_icon[n], icon);
+		set_icon(fc_icon[n], f[0]);
 		lv_label_set_text(fc_day[n], f[1]);
 		lv_label_set_text_fmt(fc_high[n], "%s°", f[2]);
 		lv_label_set_text_fmt(fc_low[n], *f[3] ? "%s°" : "", f[3]);
@@ -262,11 +317,42 @@ static int load_forecast(void)
 	return n;
 }
 
+static void stop_icon(lv_timer_t *t)
+{
+	(void)t;
+	pause_icon(weather_icon, true);
+	icon_playing = false;
+}
+
+/* ICON_ANIMATION=minute: play the weather icon's animation through once */
+static void play_icon_once(void)
+{
+	lv_anim_t *a = lv_lottie_get_anim(weather_icon);
+	lv_timer_t *t;
+
+	if (!a || icon_playing || lv_obj_is_hidden(weather_icon))
+		return;
+	icon_playing = true;
+	pause_icon(weather_icon, false);
+	t = lv_timer_create(stop_icon, lv_anim_get_time(a), NULL);
+	lv_timer_set_repeat_count(t, 1);
+}
+
+/* The forecast's animations only run while it's on screen */
+static void pause_forecast_icons(bool pause)
+{
+	int i;
+
+	for (i = 0; i < FORECAST_DAYS; i++)
+		pause_icon(fc_icon[i], pause);
+}
+
 static void hide_forecast(lv_timer_t *t)
 {
 	(void)t;
 	lv_obj_set_hidden(forecast_panel, true);
 	lv_timer_pause(forecast_timer);
+	pause_forecast_icons(true);
 }
 
 static void on_tap(lv_event_t *e)
@@ -275,6 +361,7 @@ static void on_tap(lv_event_t *e)
 		hide_forecast(NULL);
 	} else if (load_forecast() > 0) {
 		lv_obj_set_hidden(forecast_panel, false);
+		pause_forecast_icons(false);
 		lv_timer_reset(forecast_timer);
 		lv_timer_resume(forecast_timer);
 	}
@@ -290,7 +377,7 @@ static lv_obj_t *label(lv_obj_t *parent, const lv_font_t *font, uint32_t color)
 	return l;
 }
 
-static void create_forecast_panel(lv_obj_t *scr, const lv_font_t *text, const lv_font_t *icons)
+static void create_forecast_panel(lv_obj_t *scr, const lv_font_t *text)
 {
 	int i;
 
@@ -314,10 +401,10 @@ static void create_forecast_panel(lv_obj_t *scr, const lv_font_t *text, const lv
 		lv_obj_set_flex_flow(col, LV_FLEX_FLOW_COLUMN);
 		lv_obj_set_flex_align(col, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER,
 				      LV_FLEX_ALIGN_CENTER);
-		lv_obj_set_style_pad_row(col, 14, 0);
+		lv_obj_set_style_pad_row(col, 4, 0);
 		lv_obj_set_clickable(col, false);
 		fc_day[i] = label(col, text, 0x909090);
-		fc_icon[i] = label(col, icons, 0xc0c0c0);
+		fc_icon[i] = weather_lottie(col, FC_ICON_SIZE, fc_icon_buf[i]);
 		fc_high[i] = label(col, text, 0xe8e8e8);
 		fc_low[i] = label(col, text, 0x707070);
 	}
@@ -325,11 +412,32 @@ static void create_forecast_panel(lv_obj_t *scr, const lv_font_t *text, const lv
 	lv_timer_pause(forecast_timer);
 }
 
+static void load_conf(void)
+{
+	char line[128];
+	FILE *f = fopen(CONF_FILE, "r");
+
+	if (!f)
+		return;
+	while (fgets(line, sizeof(line), f)) {
+		line[strcspn(line, "\n")] = 0;
+		if (!strcmp(line, "ICON_ANIMATION=always"))
+			icon_animation = ANIM_ALWAYS;
+		else if (!strcmp(line, "ICON_ANIMATION=minute"))
+			icon_animation = ANIM_MINUTE;
+		else if (!strcmp(line, "ICON_ANIMATION=still"))
+			icon_animation = ANIM_STILL;
+		else if (!strncmp(line, "ICON_ANIMATION=", 15))
+			fprintf(stderr, "clockface: unknown %s\n", line);
+	}
+	fclose(f);
+}
+
 int main(int argc, char **argv)
 {
 	static uint32_t draw_buf[2][SCREEN_W * DRAW_LINES];
 	lv_display_t *disp;
-	lv_font_t *big, *medium, *small, *icons, *icons_big;
+	lv_font_t *big, *medium, *small;
 	lv_obj_t *scr, *weather_row;
 	void *ttf;
 	size_t ttf_len = 0;
@@ -344,6 +452,7 @@ int main(int argc, char **argv)
 		}
 	}
 
+	load_conf();
 	fb_fd = open("/dev/fb0", O_RDWR);
 	if (fb_fd < 0 || ioctl(fb_fd, FBIOGET_VSCREENINFO, &var) ||
 	    ioctl(fb_fd, FBIOGET_FSCREENINFO, &fix)) {
@@ -376,8 +485,6 @@ int main(int argc, char **argv)
 	big = lv_tiny_ttf_create_data(ttf, ttf_len, 240);
 	medium = lv_tiny_ttf_create_data(ttf, ttf_len, 44);
 	small = lv_tiny_ttf_create_data(ttf, ttf_len, 36);
-	icons = lv_tiny_ttf_create_data(mdi_weather_ttf, mdi_weather_ttf_end - mdi_weather_ttf, 48);
-	icons_big = lv_tiny_ttf_create_data(mdi_weather_ttf, mdi_weather_ttf_end - mdi_weather_ttf, 96);
 
 	scr = lv_screen_active();
 	lv_obj_set_style_bg_color(scr, lv_color_black(), 0);
@@ -400,20 +507,18 @@ int main(int argc, char **argv)
 	lv_obj_set_flex_flow(weather_row, LV_FLEX_FLOW_ROW);
 	lv_obj_set_flex_align(weather_row, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER,
 			      LV_FLEX_ALIGN_CENTER);
-	lv_obj_set_style_pad_column(weather_row, 14, 0);
+	lv_obj_set_style_pad_column(weather_row, 6, 0);
 	lv_obj_align(weather_row, LV_ALIGN_CENTER, 0, 165);
 
-	weather_icon = lv_label_create(weather_row);
-	lv_label_set_text(weather_icon, "");
-	lv_obj_set_style_text_font(weather_icon, icons, 0);
-	lv_obj_set_style_text_color(weather_icon, lv_color_hex(0x909090), 0);
+	weather_icon = weather_lottie(weather_row, ICON_SIZE, icon_buf);
+	lv_obj_set_hidden(weather_icon, true);
 
 	weather_label = lv_label_create(weather_row);
 	lv_label_set_text(weather_label, "");
 	lv_obj_set_style_text_font(weather_label, small, 0);
 	lv_obj_set_style_text_color(weather_label, lv_color_hex(0x707070), 0);
 
-	create_forecast_panel(scr, small, icons_big);
+	create_forecast_panel(scr, small);
 	lv_obj_add_event_cb(scr, on_tap, LV_EVENT_CLICKED, NULL);
 
 	touch_fd = open(TOUCH_DEV, O_RDONLY | O_NONBLOCK);

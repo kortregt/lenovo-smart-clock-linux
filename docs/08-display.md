@@ -28,9 +28,11 @@ Two things differ from a PC framebuffer:
 ## The clock face
 
 [`userspace/clockface/`](../userspace/clockface/) is a small [LVGL](https://lvgl.io) v9.6
-program: the time in large digits and the date, in the Inter font (Alpine's `font-inter`,
+program: the time in large digits, the date and the weather (with animated
+[Meteocons](09-home-assistant.md)), in the Inter font (Alpine's `font-inter`,
 loaded with LVGL's TinyTTF so any size works). It starts from `/etc/inittab` and uses
-almost no CPU (nothing is redrawn until the minute changes) and about 3 MB of RAM.
+almost no CPU between minute changes and about 4 MB of RAM. It's C with LVGL's ThorVG
+library (C++), so the build needs `g++-aarch64-linux-gnu` too.
 
 It doesn't use LVGL's own fbdev driver. Its flush callback does the two things this
 display needs: it rotates each rendered area into the sideways framebuffer (and swaps the
