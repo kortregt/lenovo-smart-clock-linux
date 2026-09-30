@@ -64,7 +64,7 @@ phone flashlight about 20,000. Readings are smoothed and mapped through a curve 
 backlight level (1–255), and the backlight fades towards it about 30 times a second on a
 log scale, so the change looks even at every brightness. The curve is in
 [`/etc/clock/autobright.conf`](../rootfs-overlay/etc/clock/autobright.conf):
-`CURVE="3:4 30:24 300:140 3000:255"` (reading:level points).
+`CURVE="3:6 20:60 100:130 300:190 3000:255"` (reading:level points).
 
 ## Touch
 

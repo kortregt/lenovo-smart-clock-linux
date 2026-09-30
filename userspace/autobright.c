@@ -7,7 +7,7 @@
  * looks as big a change as 100 -> 200), so changes are smooth at every brightness.
  *
  * The curve is read from /etc/clock/autobright.conf:
- *   CURVE="3:4 30:24 300:140 3000:255"      (sensor reading:backlight level, log-interpolated)
+ *   CURVE="3:6 20:60 100:130 300:190 3000:255"      (sensor reading:backlight level, log-interpolated)
  *
  *   autobright [-v]
  *
@@ -86,23 +86,22 @@ static void load_conf(void)
 	char line[256], *p;
 	FILE *f = fopen(CONF, "r");
 
-	parse_curve("3:4 30:24 300:140 3000:255");
+	parse_curve("3:6 20:60 100:130 300:190 3000:255");
 	if (!f)
 		return;
 	while (fgets(line, sizeof(line), f)) {
 		if (strncmp(line, "CURVE=", 6))
 			continue;
 		p = line + 6;
-		p[strcspn(p, "\"\n")] = 0;
-		if (*p == '"')
+		if (*p == '"')		/* the value may be quoted */
 			p++;
-		p[strcspn(p, "\"")] = 0;
+		p[strcspn(p, "\"\n")] = 0;
 		parse_curve(p);
 	}
 	fclose(f);
 	if (npoints < 2) {
-		fprintf(stderr, "autobright: bad CURVE in %s, using the default\n", CONF);
-		parse_curve("3:4 30:24 300:140 3000:255");
+		fprintf(stderr, "autobright: can't read CURVE in %s, using the default\n", CONF);
+		parse_curve("3:6 20:60 100:130 300:190 3000:255");
 	}
 }
 
@@ -153,6 +152,14 @@ int main(int argc, char **argv)
 	if (argc > 1 && !strcmp(argv[1], "-v"))
 		verbose = 1;
 	load_conf();
+	if (verbose) {
+		int i;
+
+		fprintf(stderr, "autobright: curve");
+		for (i = 0; i < npoints; i++)
+			fprintf(stderr, " %.0f:%.0f", exp(curve_x[i]), curve_y[i]);
+		fprintf(stderr, "\n");
+	}
 
 	i2c_fd = open(I2C_DEV, O_RDWR);
 	if (i2c_fd < 0 || ioctl(i2c_fd, I2C_SLAVE_FORCE, LTR578_ADDR) < 0) {
