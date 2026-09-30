@@ -65,9 +65,6 @@ then clears the factory partition's persistent digest (otherwise later changes t
 This repo's copy differs from AOSP's in one line: the original crashes on Python 3 in that
 last step (`TypeError: a bytes-like object is required, not 'str'`).
 
-Running the script again on an already-unlocked clock fails with `only allow when locked`:
-there's no challenge to issue any more. That's expected, not an error.
-
 ## Things that don't work
 
 - `fastboot oem append-cmdline …` is refused on production units
