@@ -53,7 +53,7 @@
 #define FORECAST_MS	15000
 #define TOUCH_DEV	"/dev/input/event1"
 #define VOLUME_FILE	"/run/clock/volume"
-#define VOLUME_MAX	20
+#define VOLUME_MAX	100
 #define VOLUME_SHOW_MS	2000
 
 #define CONF_FILE	"/etc/clock/clockface.conf"

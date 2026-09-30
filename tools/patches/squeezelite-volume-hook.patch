@@ -1,0 +1,54 @@
+diff --git a/output_alsa.c b/output_alsa.c
+index 85d2ef6..f60239e 100644
+--- a/output_alsa.c
++++ b/output_alsa.c
+@@ -25,6 +25,7 @@
+ // Output using Alsa
+ 
+ #include "squeezelite.h"
++#include <sys/wait.h>
+ 
+ #if ALSA
+ 
+@@ -228,6 +229,41 @@ static void set_mixer(bool setmax, float ldB, float rdB) {
+ 
+ void set_volume(unsigned left, unsigned right) {
+ 	float ldB, rdB;
++	static const char *hook;
++	static int hook_checked, last_level = -1;
++
++	/*
++	 * Smart Clock: with VOLUME_HOOK set, leave the stream at full scale and run the command
++	 * with the server's volume as 0-100 (0.5 dB per step, as Music Assistant and Lyrion map
++	 * it: 100 = 0 dB, 0 = mute), so the amplifier's own volume does the work.
++	 */
++	if (!hook_checked) {
++		hook = getenv("VOLUME_HOOK");
++		hook_checked = 1;
++	}
++	if (hook && *hook) {
++		unsigned gain = left > right ? left : right;
++		int level = gain ? (int)lroundf(100 + 2 * 20 * log10f(gain / 65536.0F)) : 0;
++		char arg[8];
++
++		LOCK;
++		output.gainL = FIXED_ONE;
++		output.gainR = FIXED_ONE;
++		UNLOCK;
++		level = level < 0 ? 0 : level > 100 ? 100 : level;
++		if (level == last_level)
++			return;
++		last_level = level;
++		LOG_INFO("volume hook: %s %d", hook, level);
++		while (waitpid(-1, NULL, WNOHANG) > 0)
++			;	/* reap earlier hook runs */
++		snprintf(arg, sizeof(arg), "%d", level);
++		if (fork() == 0) {
++			execl("/bin/sh", "sh", "-c", "exec $0 \"$1\"", hook, arg, (char *)NULL);
++			_exit(127);
++		}
++		return;
++	}
+ 
+ 	if (!alsa.volume_mixer_name) {
+ 		LOG_DEBUG("setting internal gain left: %u right: %u", left, right);

@@ -70,7 +70,8 @@ written with `i2ctransfer`, 40 writes per call.
 ## Volume and buttons
 
 [`clock-volume`](../rootfs-overlay/usr/local/bin/clock-volume) sets the amp's own digital
-volume (`0x4c`) in 21 levels: 20 is 0 dB, each step down is 2.5 dB, 0 is mute. The level is
+volume (`0x4c`) as 0-100, Music Assistant's scale: 100 is 0 dB, each step down is 0.5 dB
+(one amp step), 0 is mute; the buttons move 5. The level is
 saved across reboots (restored by `rcS` after `audio-init`) and published in
 `/run/clock/volume`; the clock face shows a volume bar for 2 seconds whenever that changes. `clock-volume up`, `down`, `set N` or `get`.
 

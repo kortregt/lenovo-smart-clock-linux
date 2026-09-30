@@ -55,3 +55,35 @@ Two styles, chosen with `ICON_STYLE` in
 `HA_WEATHER` is any `weather.*` entity; a new Home Assistant install creates
 `weather.forecast_home` (Met.no). The clock must be able to reach Home Assistant; check with
 `wget -O - $HA_URL/api/`, which should answer `401 Unauthorized` without a token.
+
+## Music (Music Assistant)
+
+The clock is a [Music Assistant](https://music-assistant.io) player, so anything Music
+Assistant can play (Jellyfin, Spotify, radio, ...) plays on its speaker, controlled from
+Music Assistant or Home Assistant.
+
+- **Player:** [squeezelite](https://github.com/ralph-irving/squeezelite), started from
+  `/etc/inittab`. Alpine doesn't package it, so
+  [`tools/build-squeezelite.sh`](../tools/build-squeezelite.sh) builds it in an Alpine
+  aarch64 chroot. It finds Music Assistant on the network by itself (port 3483), resamples
+  to 48 kHz (what the amp's DSP expects), and plays through the shared `dmix` device in
+  [`/etc/asound.conf`](../rootfs-overlay/etc/asound.conf).
+- **Shared speaker:** `dmix` needs System V IPC, which Android kernels leave out, so the
+  kernel config adds `CONFIG_SYSVIPC` ([`smartclock.config`](../kernel/smartclock.config)).
+- **One volume:** Music Assistant's volume (0-100) is 0.5 dB per step, the same as the
+  amp's own volume register, so instead of scaling the audio, squeezelite is patched
+  ([`squeezelite-volume-hook.patch`](../tools/patches/squeezelite-volume-hook.patch)) to
+  hand the level to `clock-volume`, which sets the amp. The buttons set the amp too and
+  tell Home Assistant (`HA_PLAYER` in `ha.conf`, e.g. `media_player.smart_clock`), so the
+  slider follows. Echoes of older levels are ignored for 2 s after a button press, so
+  holding a button doesn't bounce.
+
+### Setting up Music Assistant (Docker)
+
+Music Assistant runs as its own container with host networking (players find it by
+broadcast and it streams to them on its own ports). Add the **Squeezelite** player provider.
+Its advanced settings include an unauthenticated JSON-RPC CLI on port 9000; if something
+else uses 9000 (Authelia does by default) the provider fails to start, and since the setting
+only appears once the provider exists, free the port briefly, add the provider, then set
+the CLI port to 0 (off) or another free port. Then add the Music Assistant integration to
+Home Assistant.

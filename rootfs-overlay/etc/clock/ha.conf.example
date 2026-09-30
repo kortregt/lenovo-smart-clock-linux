@@ -3,3 +3,5 @@
 HA_URL=http://homeassistant.local:8123
 HA_TOKEN=
 HA_WEATHER=weather.forecast_home
+# The clock's Music Assistant player, so the volume buttons move its slider too
+HA_PLAYER=media_player.smart_clock

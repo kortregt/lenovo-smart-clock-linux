@@ -28,7 +28,8 @@ soldering anything. A USB-A-to-USB-A cable is the only extra hardware.
 | Buttons + mic switch | ✅ | Volume up/down (hardware amp volume); combos configurable; see [07](docs/07-audio.md#volume-and-buttons) |
 | Accelerometer | ⏳ | Not wired into anything yet |
 | Bluetooth | ⏳ | Module built, untested |
-| Home Assistant | 🟡 | Weather from Home Assistant on the clock face; see [09](docs/09-home-assistant.md) |
+| Home Assistant | 🟡 | Weather and forecast on the clock face; see [09](docs/09-home-assistant.md) |
+| Music | ✅ | Music Assistant player (squeezelite); one volume shared with the buttons; see [09](docs/09-home-assistant.md#music-music-assistant) |
 
 A reference of every chip, bus address, GPIO and partition found along the way is in
 [docs/hardware.md](docs/hardware.md).
@@ -45,7 +46,8 @@ A reference of every chip, bus address, GPIO and partition found along the way i
                   ├─ clockface: LVGL clock on /dev/fb0
                   ├─ ha-poll: weather from Home Assistant for the clock face
                   ├─ autobright: backlight from the light sensor
-                  └─ clockkeys: buttons (volume) and the mic switch
+                  ├─ clockkeys: buttons (volume) and the mic switch
+                  └─ squeezelite: Music Assistant player, volume -> amp
  slot A: untouched stock Android Things    -> `fastboot set_active a` to go back
 ```
 

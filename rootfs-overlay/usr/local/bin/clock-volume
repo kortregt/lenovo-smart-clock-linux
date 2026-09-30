@@ -1,24 +1,44 @@
 #!/bin/sh
-# Speaker volume, using the TAS5805M amp's own digital volume (register 0x4C, 0.5 dB steps;
-# 0x30 = 0 dB, 0xFF = mute). Levels 0-20: 20 = 0 dB, each step down is 2.5 dB, 0 = mute.
+# Speaker volume, 0-100 like Music Assistant's: the TAS5805M amp's own digital volume
+# (register 0x4C, 0.5 dB steps; 0x30 = 0 dB). 100 = 0 dB, each step is 0.5 dB quieter,
+# 1 = -49.5 dB, 0 = mute. That's the same scale Music Assistant sends to squeezelite, so its
+# slider and the clock's buttons move the same volume.
+#
+#   clock-volume [get | up | down | set LEVEL | restore]   buttons / by hand
+#   clock-volume player LEVEL                             from squeezelite (VOLUME_HOOK)
+#
+# up/down/set also tell Home Assistant (HA_PLAYER in /etc/clock/ha.conf), so Music
+# Assistant's slider follows; that's sent once the level has settled for 0.5 s. For 2 s
+# after a local change, levels coming back from the player that differ are ignored, so a
+# held button doesn't bounce back to an echo of an earlier step.
+#
 # The level is saved in /var/lib/clock/volume and published in /run/clock/volume (which the
 # clock face watches to show a volume bar).
-#
-#   clock-volume [get | up | down | set LEVEL | restore]
-MAX=20
-DEFAULT=12
+MAX=100
+STEP=5
+DEFAULT=60
 SAVE=/var/lib/clock/volume
 PUB=/run/clock/volume
+LOCAL=/run/clock/volume.local	# time of the last local change
+SEQ=/run/clock/volume.seq	# newest pending Home Assistant update
 
 level=$(cat $SAVE 2>/dev/null)
 case "$level" in ''|*[!0-9]*) level=$DEFAULT ;; esac
+cur=$level
+notify=0
 
 case "${1:-get}" in
 get)	echo $level; exit 0 ;;
-up)	level=$((level + 1)) ;;
-down)	level=$((level - 1)) ;;
+up)	level=$((level + STEP)); notify=1 ;;
+down)	level=$((level - STEP)); notify=1 ;;
 set)	case "$2" in ''|*[!0-9]*) echo "usage: clock-volume set 0-$MAX" >&2; exit 2 ;; esac
-	level=$2 ;;
+	level=$2; notify=1 ;;
+player)	case "$2" in ''|*[!0-9]*) exit 2 ;; esac
+	level=$2
+	last=$(cat $LOCAL 2>/dev/null || echo 0)
+	if [ "$level" != "$cur" ] && [ $(($(date +%s) - last)) -lt 2 ]; then
+		exit 0		# an echo of an older local change
+	fi ;;
 restore) ;;
 *)	echo "usage: clock-volume [get | up | down | set LEVEL | restore]" >&2; exit 2 ;;
 esac
@@ -28,7 +48,7 @@ esac
 if [ $level -eq 0 ]; then
 	reg=0xff
 else
-	reg=$(printf '0x%02x' $((0x30 + (MAX - level) * 5)))
+	reg=$(printf '0x%02x' $((0x30 + MAX - level)))
 fi
 # book 0, page 0, then the volume register
 i2ctransfer -y -f 2 w2@0x2c 0x00 0x00 w2@0x2c 0x7f 0x00 w2@0x2c 0x00 0x00 w2@0x2c 0x4c $reg || exit 1
@@ -37,3 +57,19 @@ mkdir -p ${SAVE%/*} ${PUB%/*}
 echo $level > $SAVE
 echo $level > $PUB.tmp && mv $PUB.tmp $PUB
 echo $level
+
+if [ $notify -eq 1 ]; then
+	date +%s > $LOCAL
+	echo $$ > $SEQ
+	(
+		sleep 0.5
+		[ "$(cat $SEQ 2>/dev/null)" = $$ ] || exit 0	# a newer change will send it
+		[ -r /etc/clock/ha.conf ] && . /etc/clock/ha.conf
+		[ -n "${HA_URL:-}" ] && [ -n "${HA_TOKEN:-}" ] && [ -n "${HA_PLAYER:-}" ] || exit 0
+		v=$(cat $SAVE)
+		wget -q -T 3 -O /dev/null --header "Authorization: Bearer $HA_TOKEN" \
+			--header "Content-Type: application/json" \
+			--post-data "{\"entity_id\":\"$HA_PLAYER\",\"volume_level\":$((v / 100)).$(printf %02d $((v % 100)))}" \
+			"$HA_URL/api/services/media_player/volume_set"
+	) </dev/null >/dev/null 2>&1 &
+fi

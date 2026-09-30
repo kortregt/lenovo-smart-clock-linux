@@ -12,8 +12,9 @@ ttyGS0::respawn:/sbin/getty -n -l /usr/local/bin/autologin 0 ttyGS0 vt100
 # Buttons and mic switch (actions in /etc/clock/keys.conf).
 ::respawn:/usr/local/bin/clockkeys
 # Music Assistant player (squeezelite): finds the server itself; plays through the shared
-# speaker (dmix, /etc/asound.conf), resampled to 48 kHz; lets go of it after 5 s idle.
-::respawn:/usr/local/bin/squeezelite -n "Smart Clock" -o default -r 48000 -R -C 5
+# speaker (dmix, /etc/asound.conf), resampled to 48 kHz; lets go of it after 5 s idle. Its
+# volume goes to the amp through clock-volume (VOLUME_HOOK, our patch).
+::respawn:/usr/bin/env VOLUME_HOOK="/usr/local/bin/clock-volume player" /usr/local/bin/squeezelite -n "Smart Clock" -o default -r 48000 -R -C 5
 ::respawn:/sbin/watchdog -F -t 5 -T 30 /dev/watchdog
 ::shutdown:/etc/clock/rc.shutdown
 ::ctrlaltdel:/sbin/reboot
