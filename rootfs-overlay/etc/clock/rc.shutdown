@@ -1,0 +1,4 @@
+#!/bin/sh
+killall ntpd wpa_supplicant udhcpc 2>/dev/null
+sync
+mount -o remount,ro /

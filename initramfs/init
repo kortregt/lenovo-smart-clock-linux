@@ -1,0 +1,153 @@
+#!/bin/busybox sh
+# Minimal Linux init for the Lenovo Smart Clock (gen 1), booted with `fastboot boot`.
+# Sets up a USB gadget (CDC-ACM serial = /dev/cu.usbmodem* on macOS, plus CDC-ECM network,
+# clock = 192.168.7.2), then switch_roots into the Alpine rootfs on system_b. With
+# clock.shell on the kernel cmdline, or if system_b can't be used, it stays here and serves
+# a rescue shell on the serial port and telnet.
+#
+# Backlight progress signal (there is no other output without UART):
+#   2 slow blinks  -> this init started
+#   4 fast blinks  -> USB gadget bound to the controller (host should see a device now)
+#   stays dim      -> something failed before the gadget came up; details in /tmp/init.log
+
+/bin/busybox --install -s /bin
+export PATH=/bin
+
+mkdir -p /proc /sys /dev /tmp /run
+mount -t proc proc /proc
+mount -t sysfs sysfs /sys
+mount -t devtmpfs devtmpfs /dev
+mkdir -p /dev/pts && mount -t devpts devpts /dev/pts
+mount -t tmpfs tmpfs /tmp
+mount -t configfs configfs /sys/kernel/config
+mkdir -p /sys/fs/pstore && mount -t pstore pstore /sys/fs/pstore 2>/dev/null
+
+LOG=/tmp/init.log
+
+# Diagnostics that survive the watchdog reset: after every log line, write this log plus
+# dmesg into the unused gap of boot_b (image ends ~12.3 MiB, AVB footer in the last MiB).
+# Read back with mtkclient (`mtk r boot_b boot_b.bin`), then tools/read_diag.py boot_b.bin.
+DIAG_SEEK_MB=16
+DIAG_DEV=
+n=0
+while [ -z "$DIAG_DEV" ] && [ $n -lt 20 ]; do
+	for u in /sys/class/block/*/uevent; do
+		if grep -q '^PARTNAME=boot_b$' "$u" 2>/dev/null; then
+			d=$(dirname "$u")
+			DIAG_DEV=/tmp/diag-blk
+			mknod $DIAG_DEV b $(cut -d: -f1 "$d/dev") $(cut -d: -f2 "$d/dev")
+			break
+		fi
+	done
+	[ -n "$DIAG_DEV" ] || { sleep 0.5; n=$((n + 1)); }
+done
+persist() {
+	[ -n "$DIAG_DEV" ] || return
+	{
+		echo "=== CLOCK-DIAG boot=$(cat /proc/sys/kernel/random/boot_id) uptime=$(cut -d' ' -f1 /proc/uptime)"
+		cat $LOG
+		echo "=== DMESG"
+		dmesg
+		echo "=== END"
+	} > /tmp/diag.txt
+	# Pad to 1 MiB so leftovers from a longer earlier run are overwritten too.
+	dd if=/dev/zero bs=1M count=1 2>/dev/null >> /tmp/diag.txt
+	dd if=/tmp/diag.txt of=$DIAG_DEV bs=1M seek=$DIAG_SEEK_MB conv=fsync,notrunc 2>/dev/null
+}
+log() { echo "clock-init: $*" | tee -a $LOG > /dev/kmsg; persist; }
+[ -n "$DIAG_DEV" ] || echo "clock-init: boot_b not found, no persistent diag" > /dev/kmsg
+
+BL=/sys/class/leds/lcd-backlight/brightness
+blink() { # count on_ms off_ms
+	[ -w $BL ] || return
+	i=0
+	while [ $i -lt $1 ]; do
+		echo 255 > $BL; usleep $(($2 * 1000))
+		echo 0 > $BL; usleep $(($3 * 1000))
+		i=$((i + 1))
+	done
+	echo 255 > $BL
+}
+
+log "started"
+blink 2 600 600
+
+# The ID pin reads as OTG host with an A-to-A cable; force the MUSB controller into device mode.
+SWMODE=$(find /sys/devices -name swmode 2>/dev/null | head -1)
+if [ -n "$SWMODE" ]; then
+	echo device > "$SWMODE" && log "usb swmode=device via $SWMODE"
+else
+	log "no swmode attribute found (MTK_MUSB_SW_WITCH_MODE missing?)"
+fi
+sleep 1
+
+G=/sys/kernel/config/usb_gadget/clock
+mkdir -p $G
+echo 0x1d6b > $G/idVendor   # Linux Foundation
+echo 0x0104 > $G/idProduct  # Multifunction Composite Gadget
+echo 0x0200 > $G/bcdUSB
+mkdir -p $G/strings/0x409
+echo "Lenovo" > $G/strings/0x409/manufacturer
+echo "Smart Clock Linux" > $G/strings/0x409/product
+echo "$(cat /proc/sys/kernel/random/boot_id | cut -c1-8)" > $G/strings/0x409/serialnumber
+mkdir -p $G/configs/c.1/strings/0x409
+echo "acm+ecm" > $G/configs/c.1/strings/0x409/configuration
+echo 250 > $G/configs/c.1/MaxPower
+mkdir -p $G/functions/acm.GS0 $G/functions/ecm.usb0
+echo 02:1c:c0:0c:00:01 > $G/functions/ecm.usb0/host_addr
+echo 02:1c:c0:0c:00:02 > $G/functions/ecm.usb0/dev_addr
+ln -s $G/functions/acm.GS0 $G/configs/c.1/
+ln -s $G/functions/ecm.usb0 $G/configs/c.1/
+
+UDC=$(ls /sys/class/udc 2>/dev/null | head -1)
+if [ -n "$UDC" ] && echo "$UDC" > $G/UDC; then
+	log "gadget bound to $UDC"
+	blink 4 150 150
+else
+	log "gadget bind failed (udc='$UDC')"
+	echo 20 > $BL 2>/dev/null
+fi
+
+# Switch into the Alpine rootfs on system_b unless the boot image cmdline has clock.shell.
+# The USB gadget configured above stays in place across switch_root.
+if ! grep -qw clock.shell /proc/cmdline; then
+	ROOTDEV=
+	for u in /sys/class/block/*/uevent; do
+		grep -q '^PARTNAME=system_b$' "$u" && ROOTDEV=/dev/$(sed -n 's/^DEVNAME=//p' "$u")
+	done
+	mkdir -p /newroot
+	if [ -n "$ROOTDEV" ] && mount -t ext4 -o rw,noatime "$ROOTDEV" /newroot; then
+		if [ -x /newroot/sbin/init ]; then
+			log "switch_root to $ROOTDEV"
+			umount /sys/fs/pstore 2>/dev/null
+			umount /tmp
+			for m in /dev /proc /sys; do mount --move $m /newroot$m; done
+			exec switch_root /newroot /sbin/init
+		fi
+		log "no /sbin/init on $ROOTDEV"
+		umount /newroot
+	else
+		log "could not mount system_b ('$ROOTDEV')"
+	fi
+	log "falling back to the initramfs shell"
+fi
+
+# Fallback / rescue shell. Reboot into the normal boot slot on a hang.
+[ -e /dev/watchdog ] && watchdog -t 5 -T 30 /dev/watchdog && log "watchdog armed (30s)"
+ifconfig usb0 192.168.7.2 netmask 255.255.255.0 up 2>/dev/null && log "usb0 up 192.168.7.2"
+telnetd -l /bin/sh -p 23 && log "telnetd on :23"
+
+# Serial shell on the ACM port, respawned so disconnecting the terminal is harmless.
+(
+	while true; do
+		[ -e /dev/ttyGS0 ] && setsid sh -c 'exec sh -i </dev/ttyGS0 >/dev/ttyGS0 2>&1'
+		sleep 1
+	done
+) &
+
+log "ready"
+# Heartbeat into the persistent log for the first minute, to catch late hangs/reboots.
+n=0
+while [ $n -lt 6 ]; do sleep 10; n=$((n + 1)); log "alive +${n}0s"; done
+# PID 1 must never exit.
+while true; do sleep 3600; done

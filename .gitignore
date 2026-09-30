@@ -1,0 +1,22 @@
+# Device-specific and private: never publish
+backup/
+dump/
+hwparam.json
+gpt.txt
+cube_unlock_credentials_v2.zip
+.env
+.state
+
+# Build outputs: boot images, rootfs, extracted vendor firmware, decompiled app code, logs
+build/
+
+# Third-party source trees and tools (fetched separately)
+opensource*/
+tools/mtkclient/
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+.DS_Store

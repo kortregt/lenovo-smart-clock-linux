@@ -1,0 +1,8 @@
+# Smart Clock Alpine: busybox init (no OpenRC). Boot work lives in /etc/clock/rcS.
+::sysinit:/etc/clock/rcS
+# Root shell on the USB CDC-ACM serial port (/dev/cu.usbmodem* on the Mac).
+ttyGS0::respawn:/sbin/getty -n -l /usr/local/bin/autologin 0 ttyGS0 vt100
+::respawn:/usr/sbin/dropbear -F -R -s -p 22
+::respawn:/sbin/watchdog -F -t 5 -T 30 /dev/watchdog
+::shutdown:/etc/clock/rc.shutdown
+::ctrlaltdel:/sbin/reboot

@@ -1,0 +1,25 @@
+#!/bin/busybox sh
+# Probe init: proves /init executes by rebooting straight away (a fast reset instead of the
+# ~60 s watchdog reset), and leaves a marker plus dmesg at boot_b+16 MiB if it can.
+# Build with: INIT=initramfs/init-probe sh tools/mkinitramfs.sh
+B=/bin/busybox
+$B mount -t proc proc /proc
+$B mount -t sysfs sysfs /sys
+$B mount -t tmpfs tmpfs /tmp
+for u in /sys/class/block/*/uevent; do
+	if $B grep -q '^PARTNAME=boot_b$' "$u"; then
+		d=${u%/uevent}
+		$B mknod /tmp/b b $($B cut -d: -f1 $d/dev) $($B cut -d: -f2 $d/dev)
+		{
+			echo "=== CLOCK-DIAG probe uptime=$($B cut -d' ' -f1 /proc/uptime)"
+			echo "cmdline: $($B cat /proc/cmdline)"
+			echo "=== DMESG"
+			$B dmesg
+			echo "=== END"
+		} > /tmp/d
+		$B dd if=/tmp/d of=/tmp/b bs=1M seek=16 conv=fsync,notrunc
+		break
+	fi
+done
+$B sync
+$B reboot -f

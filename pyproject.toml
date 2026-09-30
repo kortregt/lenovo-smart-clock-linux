@@ -1,0 +1,14 @@
+[project]
+name = "smart-clock"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+    "capstone>=5.0.9",
+    "keystone-engine>=0.9.2",
+    "mtkclient",
+    "setuptools>=84.0.0",
+    "unicorn>=2.1.4",
+]
+
+[tool.uv.sources]
+mtkclient = { git = "https://github.com/bkerler/mtkclient", rev = "cd25cf9c1ff6d36e82697ac2c798e69e9cfb78c3" }

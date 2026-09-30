@@ -1,0 +1,47 @@
+diff --git a/init/initramfs.c b/init/initramfs.c
+index f8ce812b..c5c87d5c 100644
+--- a/init/initramfs.c
++++ b/init/initramfs.c
+@@ -617,17 +617,40 @@ static int __init skip_initramfs_param(char *str)
+ }
+ __setup("skip_initramfs", skip_initramfs_param);
+ 
++/*
++ * The Smart Clock lk always appends skip_initramfs (system-as-root). keep_initramfs
++ * overrides it; a kernel with a built-in initramfs (CONFIG_INITRAMFS_SOURCE set)
++ * always keeps it, since the lk may not pass the boot image ramdisk at all.
++ */
++static int __initdata do_keep_initramfs = sizeof(CONFIG_INITRAMFS_SOURCE) > 1;
++
++static int __init keep_initramfs_param(char *str)
++{
++	if (*str)
++		return 0;
++	do_keep_initramfs = 1;
++	return 1;
++}
++__setup("keep_initramfs", keep_initramfs_param);
++
+ static int __init populate_rootfs(void)
+ {
+ 	char *err;
+ 
+-	if (do_skip_initramfs)
++	if (do_skip_initramfs && !do_keep_initramfs)
+ 		return default_rootfs();
+ 
+ 	err = unpack_to_rootfs(__initramfs_start, __initramfs_size);
+ 	if (err)
+ 		panic("%s", err); /* Failed to decompress INTERNAL initramfs */
+-	if (initrd_start) {
++	/*
++	 * With a built-in initramfs, ignore the lk-provided ramdisk entirely (do not unpack
++	 * or free it): on the Smart Clock, touching it appears to hang the boot.
++	 */
++	if (initrd_start && sizeof(CONFIG_INITRAMFS_SOURCE) > 1) {
++		pr_info("Ignoring bootloader initrd %lx-%lx (built-in initramfs in use)\n",
++			initrd_start, initrd_end);
++	} else if (initrd_start) {
+ #ifdef CONFIG_BLK_DEV_RAM
+ 		int fd;
+ 		printk(KERN_INFO "Trying to unpack rootfs image as initramfs...\n");

@@ -1,0 +1,41 @@
+diff --git a/drivers/misc/mediatek/video/mt8167/dispsys/ddp_debug.c b/drivers/misc/mediatek/video/mt8167/dispsys/ddp_debug.c
+index 5455490d..527342fa 100644
+--- a/drivers/misc/mediatek/video/mt8167/dispsys/ddp_debug.c
++++ b/drivers/misc/mediatek/video/mt8167/dispsys/ddp_debug.c
+@@ -444,6 +444,36 @@ static void process_dbg_opt(const char *opt)
+ 			DDPMSG("force_ovl_sec: %d\n", force_ovl_sec);
+ 			sprintf(buf, "force_ovl_sec: %d\n", force_ovl_sec);
+ 		}
++	} else if (strncmp(opt, "pq_bypass:", 10) == 0) {
++		/* Smart Clock bring-up: put PQ stages in relay. mask bit0 color, 1 ccorr, 2 aal, 3 gamma, 4 dither */
++		static const enum DISP_MODULE_ENUM pq_mods[] = {
++			DISP_MODULE_COLOR0, DISP_MODULE_CCORR, DISP_MODULE_AAL, DISP_MODULE_GAMMA, DISP_MODULE_DITHER };
++		unsigned int mask = 0, i;
++
++		if (kstrtouint(opt + 10, 0, &mask) == 0) {
++			for (i = 0; i < ARRAY_SIZE(pq_mods); i++) {
++				struct DDP_MODULE_DRIVER *drv = ddp_modules_driver[pq_mods[i]];
++
++				if (drv && drv->bypass)
++					drv->bypass(pq_mods[i], (mask >> i) & 1);
++			}
++			sprintf(buf, "pq_bypass: 0x%x\n", mask);
++		} else {
++			sprintf(buf, "pq_bypass: bad mask\n");
++		}
++	} else if (strncmp(opt, "dsi_bist:", 9) == 0) {
++		/* Smart Clock bring-up: DSI self-pattern, bypassing OVL/RDMA/PQ. "dsi_bist:0xRRGGBB" or "dsi_bist:off" */
++		unsigned int color = 0;
++
++		if (strncmp(opt + 9, "off", 3) == 0) {
++			DSI_BIST_Pattern_Test(DISP_MODULE_DSI0, NULL, false, 0);
++			sprintf(buf, "dsi_bist: off\n");
++		} else if (kstrtouint(opt + 9, 0, &color) == 0) {
++			DSI_BIST_Pattern_Test(DISP_MODULE_DSI0, NULL, true, color);
++			sprintf(buf, "dsi_bist: 0x%06x\n", color);
++		} else {
++			sprintf(buf, "dsi_bist: bad color\n");
++		}
+ 	} else if (strncmp(opt, "mmp", 3) == 0) {
+ 		init_ddp_mmp_events();
+ 	} else {

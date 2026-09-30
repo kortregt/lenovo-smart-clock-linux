@@ -1,0 +1,3 @@
+Lenovo Smart Clock — Alpine Linux (rootfs on system_b)
+  Wi-Fi:  wpa_passphrase 'SSID' 'password' >> /etc/wpa_supplicant/wpa_supplicant.conf; reboot
+  Logs:   /var/log/rcS.log, dmesg

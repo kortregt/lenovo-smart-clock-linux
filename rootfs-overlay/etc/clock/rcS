@@ -1,0 +1,44 @@
+#!/bin/sh
+# One-shot boot script for the Smart Clock (run by busybox init as ::sysinit).
+# The initramfs already set up /dev, /proc, /sys, configfs and the USB gadget before
+# switch_root; this brings up the rest. Log: /var/log/rcS.log
+exec >/var/log/rcS.log 2>&1
+set -x
+
+mountpoint -q /proc || mount -t proc proc /proc
+mountpoint -q /sys || mount -t sysfs sysfs /sys
+mountpoint -q /dev || mount -t devtmpfs devtmpfs /dev
+mkdir -p /dev/pts /dev/shm
+mountpoint -q /dev/pts || mount -t devpts devpts /dev/pts
+mountpoint -q /dev/shm || mount -t tmpfs tmpfs /dev/shm
+mount -t tmpfs -o mode=1777 tmpfs /tmp
+mount -t tmpfs -o mode=755 tmpfs /run
+mount -o remount,rw /
+
+# Ubuntu-era noise suppression and kernel log level for the console.
+echo 0 > /proc/sys/debug/exception-trace 2>/dev/null
+hostname -F /etc/hostname
+ifconfig lo 127.0.0.1 up
+
+# Speaker amp (TAS5805M on i2c-2) needs userspace setup; see the script.
+/etc/clock/audio-init.sh
+
+# USB network (gadget created by the initramfs): clock = 192.168.7.2, Mac = 192.168.7.1.
+ifconfig usb0 192.168.7.2 netmask 255.255.255.0 up
+
+# Wi-Fi: MT7668 over SDIO; the driver is a module and wants its firmware in /lib/firmware.
+# Backgrounded so a slow or stuck firmware load can't hold up the serial console.
+(
+	insmod /lib/modules/wlan_drv_gen4_mt7668.ko
+	for i in $(seq 1 40); do [ -e /sys/class/net/wlan0 ] && break; sleep 0.5; done
+	if [ -e /sys/class/net/wlan0 ] && grep -q '^network=' /etc/wpa_supplicant/wpa_supplicant.conf; then
+		wpa_supplicant -B -i wlan0 -c /etc/wpa_supplicant/wpa_supplicant.conf
+		udhcpc -b -i wlan0 -p /run/udhcpc.wlan0.pid
+	fi
+	# Time: there is no usable RTC, so the clock starts in 2009. Wait (up to 60 s) for DHCP
+	# and DNS, step the clock once, then keep it synced. (busybox ntpd; chrony 4.8 refused to
+	# accept any source here: "No suitable source for synchronisation".)
+	for i in $(seq 1 60); do ip route | grep -q '^default' && [ -s /etc/resolv.conf ] && break; sleep 1; done
+	ntpd -n -q -p pool.ntp.org
+	ntpd -p pool.ntp.org
+) > /var/log/wifi.log 2>&1 &

@@ -1,0 +1,37 @@
+#!/bin/busybox sh
+# Display bring-up experiment: boot stock Android Things userspace (system_a) on our kernel,
+# with disp-snapshot running in the background to record the display pipeline state once
+# Android has drawn (Android shows pictures on this kernel; our bare fbdev path doesn't).
+# Logs land in boot_b at 20 (pre-switch), 22, 24 and 26 MiB; read them back from Alpine.
+# Build with: INIT=initramfs/init-android-probe EXTRA=disp-snapshot sh tools/mkinitramfs.sh
+B=/bin/busybox
+$B mount -t proc proc /proc
+$B mount -t sysfs sysfs /sys
+$B mount -t devtmpfs devtmpfs /dev
+$B mkdir -p /dbg /newroot
+$B mount -t debugfs debugfs /dbg
+
+part() { # PARTNAME -> /dev node
+	for u in /sys/class/block/*/uevent; do
+		if $B grep -q "^PARTNAME=$1\$" "$u"; then
+			echo /dev/$($B sed -n 's/^DEVNAME=//p' "$u")
+			return
+		fi
+	done
+}
+
+echo "android-probe: starting snapshot helper" > /dev/kmsg
+/bin/disp-snapshot "$(part boot_b)" /dbg &
+$B sleep 1   # let it open boot_b before /dev goes away
+
+$B mount -t ext4 -o ro "$(part system_a)" /newroot || {
+	echo "android-probe: cannot mount system_a" > /dev/kmsg
+	exec $B sh
+}
+echo "android-probe: switching to Android init" > /dev/kmsg
+# Our own log, before handing over: proves this script ran (boot_b + 20 MiB).
+{ echo "=== CLOCK-DIAG android-probe pre-switch"; $B dmesg; echo "=== END"; } > /tmp/pre.txt
+$B dd if=/tmp/pre.txt of="$(part boot_b)" bs=1M seek=20 conv=notrunc,fsync 2>/dev/null
+$B umount /proc /sys
+$B umount -l /dev
+exec $B switch_root /newroot /init
