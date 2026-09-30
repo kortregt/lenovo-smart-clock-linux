@@ -64,6 +64,16 @@ log scale, so the change looks even at every brightness. The curve is in
 [`/etc/clock/autobright.conf`](../rootfs-overlay/etc/clock/autobright.conf):
 `CURVE="3:4 30:24 300:140 3000:255"` (reading:level points).
 
+## Touch
+
+The FocalTech FT6336U touchscreen works with the kernel's `mtk-tpd` driver as
+`/dev/input/event1`. It reports **multitouch events only** (`ABS_MT_POSITION_X/Y`,
+`ABS_MT_TRACKING_ID`, plus `BTN_TOUCH`), in panel coordinates, x 0–480 and y 0–800, like the
+framebuffer. So a touch at panel (x, y) is screen (y, 479 − x). A quick tap can press and
+release within ~30 ms, between two polls of a UI toolkit, so the clock face latches each
+press until it has been reported. It uses touch to show the forecast
+([09](09-home-assistant.md)).
+
 ## Why `/dev/fb0` was black (the bug patch 0004 fixes)
 
 With no framebuffer handed over by the bootloader, the driver (`mtkfb`, in its

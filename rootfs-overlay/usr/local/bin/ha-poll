@@ -2,7 +2,8 @@
 # Poll Home Assistant for the clock face. Settings (URL, token, entities) are in
 # /etc/clock/ha.conf; see ha.conf.example. Writes /run/clock/weather for clockface: the
 # condition (the icon to draw, with "-night" for partly cloudy after sunset) on the first
-# line, and the text to show under the date on the second.
+# line, and the text to show under the date on the second. Every 10 minutes it also writes
+# /run/clock/forecast, one day per line: condition|day|high|low.
 CONF=/etc/clock/ha.conf
 OUT=/run/clock/weather
 INTERVAL=60
@@ -11,8 +12,23 @@ INTERVAL=60
 . "$CONF"
 : "${HA_URL:?}" "${HA_TOKEN:?}" "${HA_WEATHER:=weather.forecast_home}"
 mkdir -p /run/clock
+n=0
+
+forecast() {
+	wget -q -T 10 -O - --header "Authorization: Bearer $HA_TOKEN" \
+		--header "Content-Type: application/json" \
+		--post-data "{\"entity_id\":\"$HA_WEATHER\",\"type\":\"daily\"}" \
+		"$HA_URL/api/services/weather/get_forecasts?return_response" |
+	jq -r --arg e "$HA_WEATHER" '.service_response[$e].forecast | to_entries[] | .key as $i
+		| .value | "\(.condition)|\(if $i == 0 then "Today"
+			else .datetime[:10] | strptime("%Y-%m-%d") | mktime | strftime("%a") end)|\(.temperature | round)|\(.templow // "" | if . == "" then "" else round end)"'
+}
 
 while :; do
+	if [ $((n % 10)) -eq 0 ] && f=$(forecast) && [ -n "$f" ]; then
+		printf '%s\n' "$f" > /run/clock/forecast.tmp && mv /run/clock/forecast.tmp /run/clock/forecast
+	fi
+	n=$((n + 1))
 	sun=$(wget -q -T 10 -O - --header "Authorization: Bearer $HA_TOKEN" \
 		"$HA_URL/api/states/sun.sun" | jq -r .state)
 	if json=$(wget -q -T 10 -O - --header "Authorization: Bearer $HA_TOKEN" \

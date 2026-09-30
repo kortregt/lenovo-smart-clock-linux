@@ -10,6 +10,10 @@
  * weather icon (fonts/mdi-weather.ttf, built into the binary), and the text on the second.
  * Hidden when that file is missing or older than 15 minutes.
  *
+ * Tapping the screen shows the forecast from /run/clock/forecast (also from ha-poll) for
+ * 15 seconds; tapping again hides it. The touchscreen reports panel coordinates, so touches
+ * are rotated the same way as the display.
+ *
  *   clockface [-f font.ttf]
  */
 #include <fcntl.h>
@@ -22,6 +26,7 @@
 #include <time.h>
 #include <unistd.h>
 #include <linux/fb.h>
+#include <linux/input.h>
 
 #include "lvgl.h"
 
@@ -31,6 +36,10 @@
 
 #define WEATHER_FILE	"/run/clock/weather"
 #define WEATHER_MAX_AGE	(15 * 60)
+#define FORECAST_FILE	"/run/clock/forecast"
+#define FORECAST_DAYS	5
+#define FORECAST_MS	15000
+#define TOUCH_DEV	"/dev/input/event1"
 
 static const char *font_path = "/usr/share/fonts/inter/InterVariable.ttf";
 
@@ -40,6 +49,12 @@ static struct fb_fix_screeninfo fix;
 static unsigned char *fb;
 
 static lv_obj_t *time_label, *date_label, *weather_icon, *weather_label;
+static lv_obj_t *forecast_panel, *fc_day[FORECAST_DAYS], *fc_icon[FORECAST_DAYS];
+static lv_obj_t *fc_high[FORECAST_DAYS], *fc_low[FORECAST_DAYS];
+static lv_timer_t *forecast_timer;
+
+static int touch_fd = -1;
+static int touch_x, touch_y, touch_down, touch_tapped;
 
 /* fonts/mdi-weather.ttf: a subset of Material Design Icons (Apache 2.0) */
 extern const unsigned char mdi_weather_ttf[], mdi_weather_ttf_end[];
@@ -186,11 +201,135 @@ static void update_weather(lv_timer_t *t)
 		lv_label_set_text(weather_label, text);
 }
 
+/*
+ * Touch: the FT6336U driver (mtk-tpd) sends multitouch positions and BTN_TOUCH. A quick tap
+ * can press and release between two reads, so a press is latched until it's been reported.
+ */
+static void touch_read_cb(lv_indev_t *indev, lv_indev_data_t *data)
+{
+	struct input_event ev[16];
+	ssize_t n;
+	int i, sx, sy;
+
+	(void)indev;
+	while ((n = read(touch_fd, ev, sizeof(ev))) > 0) {
+		for (i = 0; i < n / (ssize_t)sizeof(ev[0]); i++) {
+			if (ev[i].type == EV_ABS && ev[i].code == ABS_MT_POSITION_X)
+				touch_x = ev[i].value;
+			else if (ev[i].type == EV_ABS && ev[i].code == ABS_MT_POSITION_Y)
+				touch_y = ev[i].value;
+			else if (ev[i].type == EV_KEY && ev[i].code == BTN_TOUCH) {
+				touch_down = ev[i].value;
+				if (touch_down)
+					touch_tapped = 1;
+			}
+		}
+	}
+	/* panel (x, y) is screen (y, 479 - x), as for the display */
+	sx = touch_y;
+	sy = SCREEN_H - 1 - touch_x;
+	data->point.x = sx < 0 ? 0 : sx >= SCREEN_W ? SCREEN_W - 1 : sx;
+	data->point.y = sy < 0 ? 0 : sy >= SCREEN_H ? SCREEN_H - 1 : sy;
+	data->state = touch_down || touch_tapped ? LV_INDEV_STATE_PRESSED : LV_INDEV_STATE_RELEASED;
+	touch_tapped = 0;
+}
+
+/* Fill the forecast panel from FORECAST_FILE; returns the number of days */
+static int load_forecast(void)
+{
+	char line[128], icon[5], *f[4], *p;
+	FILE *fp = fopen(FORECAST_FILE, "r");
+	int n = 0, i;
+
+	if (!fp)
+		return 0;
+	while (n < FORECAST_DAYS && fgets(line, sizeof(line), fp)) {
+		line[strcspn(line, "\n")] = 0;
+		for (i = 0, p = line; i < 4; i++) {
+			f[i] = p;
+			p += strcspn(p, "|");
+			if (*p)
+				*p++ = 0;
+		}
+		weather_icon_text(f[0], icon);
+		lv_label_set_text(fc_icon[n], icon);
+		lv_label_set_text(fc_day[n], f[1]);
+		lv_label_set_text_fmt(fc_high[n], "%s°", f[2]);
+		lv_label_set_text_fmt(fc_low[n], *f[3] ? "%s°" : "", f[3]);
+		n++;
+	}
+	fclose(fp);
+	return n;
+}
+
+static void hide_forecast(lv_timer_t *t)
+{
+	(void)t;
+	lv_obj_set_hidden(forecast_panel, true);
+	lv_timer_pause(forecast_timer);
+}
+
+static void on_tap(lv_event_t *e)
+{
+	if (lv_event_get_current_target(e) == forecast_panel) {
+		hide_forecast(NULL);
+	} else if (load_forecast() > 0) {
+		lv_obj_set_hidden(forecast_panel, false);
+		lv_timer_reset(forecast_timer);
+		lv_timer_resume(forecast_timer);
+	}
+}
+
+static lv_obj_t *label(lv_obj_t *parent, const lv_font_t *font, uint32_t color)
+{
+	lv_obj_t *l = lv_label_create(parent);
+
+	lv_label_set_text(l, "");
+	lv_obj_set_style_text_font(l, font, 0);
+	lv_obj_set_style_text_color(l, lv_color_hex(color), 0);
+	return l;
+}
+
+static void create_forecast_panel(lv_obj_t *scr, const lv_font_t *text, const lv_font_t *icons)
+{
+	int i;
+
+	forecast_panel = lv_obj_create(scr);
+	lv_obj_remove_style_all(forecast_panel);
+	lv_obj_set_size(forecast_panel, SCREEN_W, SCREEN_H);
+	lv_obj_set_style_bg_color(forecast_panel, lv_color_black(), 0);
+	lv_obj_set_style_bg_opa(forecast_panel, LV_OPA_COVER, 0);
+	lv_obj_set_flex_flow(forecast_panel, LV_FLEX_FLOW_ROW);
+	lv_obj_set_flex_align(forecast_panel, LV_FLEX_ALIGN_SPACE_EVENLY, LV_FLEX_ALIGN_CENTER,
+			      LV_FLEX_ALIGN_CENTER);
+	lv_obj_set_clickable(forecast_panel, true);
+	lv_obj_set_hidden(forecast_panel, true);
+	lv_obj_add_event_cb(forecast_panel, on_tap, LV_EVENT_CLICKED, NULL);
+
+	for (i = 0; i < FORECAST_DAYS; i++) {
+		lv_obj_t *col = lv_obj_create(forecast_panel);
+
+		lv_obj_remove_style_all(col);
+		lv_obj_set_size(col, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
+		lv_obj_set_flex_flow(col, LV_FLEX_FLOW_COLUMN);
+		lv_obj_set_flex_align(col, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER,
+				      LV_FLEX_ALIGN_CENTER);
+		lv_obj_set_style_pad_row(col, 14, 0);
+		lv_obj_set_clickable(col, false);
+		fc_day[i] = label(col, text, 0x909090);
+		fc_icon[i] = label(col, icons, 0xc0c0c0);
+		fc_high[i] = label(col, text, 0xe8e8e8);
+		fc_low[i] = label(col, text, 0x707070);
+	}
+	forecast_timer = lv_timer_create(hide_forecast, FORECAST_MS, NULL);
+	lv_timer_pause(forecast_timer);
+}
+
 int main(int argc, char **argv)
 {
 	static uint32_t draw_buf[2][SCREEN_W * DRAW_LINES];
 	lv_display_t *disp;
-	lv_font_t *big, *medium, *small, *icons;
+	lv_font_t *big, *medium, *small, *icons, *icons_big;
 	lv_obj_t *scr, *weather_row;
 	void *ttf;
 	size_t ttf_len = 0;
@@ -238,6 +377,7 @@ int main(int argc, char **argv)
 	medium = lv_tiny_ttf_create_data(ttf, ttf_len, 44);
 	small = lv_tiny_ttf_create_data(ttf, ttf_len, 36);
 	icons = lv_tiny_ttf_create_data(mdi_weather_ttf, mdi_weather_ttf_end - mdi_weather_ttf, 48);
+	icons_big = lv_tiny_ttf_create_data(mdi_weather_ttf, mdi_weather_ttf_end - mdi_weather_ttf, 96);
 
 	scr = lv_screen_active();
 	lv_obj_set_style_bg_color(scr, lv_color_black(), 0);
@@ -272,6 +412,19 @@ int main(int argc, char **argv)
 	lv_label_set_text(weather_label, "");
 	lv_obj_set_style_text_font(weather_label, small, 0);
 	lv_obj_set_style_text_color(weather_label, lv_color_hex(0x707070), 0);
+
+	create_forecast_panel(scr, small, icons_big);
+	lv_obj_add_event_cb(scr, on_tap, LV_EVENT_CLICKED, NULL);
+
+	touch_fd = open(TOUCH_DEV, O_RDONLY | O_NONBLOCK);
+	if (touch_fd >= 0) {
+		lv_indev_t *touch = lv_indev_create();
+
+		lv_indev_set_type(touch, LV_INDEV_TYPE_POINTER);
+		lv_indev_set_read_cb(touch, touch_read_cb);
+	} else {
+		perror(TOUCH_DEV);
+	}
 
 	update_time(NULL);
 	lv_timer_create(update_time, 1000, NULL);

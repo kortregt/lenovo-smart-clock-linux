@@ -12,6 +12,10 @@ Home Assistant's REST API; nothing needs to be installed in Home Assistant.
   to the text. It hides both if the file is missing or older than 15 minutes, so it never
   shows stale weather.
 
+- Every 10 minutes `ha-poll` also calls the `weather.get_forecasts` service (daily) and
+  writes `/run/clock/forecast`, one day per line: `condition|day|high|low`. Tapping the
+  screen shows the next five days for 15 seconds (tap again to close it).
+
 The icons are Home Assistant's own weather icons from
 [Material Design Icons](https://pictogrammers.com/library/mdi/) (Apache 2.0): a 4 KB subset
 of the font, [`userspace/clockface/fonts/mdi-weather.ttf`](../userspace/clockface/fonts/),

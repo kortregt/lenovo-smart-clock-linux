@@ -22,9 +22,10 @@ soldering anything. A USB-A-to-USB-A cable is the only extra hardware.
 | Wi-Fi (MT7668) | ✅ | Vendor module + firmware; see [06](docs/06-wifi.md) |
 | Speaker + microphones | ✅ | Amp and ADC replayed from the stock app; see [07](docs/07-audio.md) |
 | Display | ✅ | Plain `/dev/fb0` (kernel patch 0004); panel mounted sideways; see [08](docs/08-display.md) |
-| Clock face | ✅ | LVGL: time, date, weather; see [08](docs/08-display.md#the-clock-face) |
+| Clock face | ✅ | LVGL: time, date, weather, forecast on tap; see [08](docs/08-display.md#the-clock-face) |
 | Automatic brightness | ✅ | Light sensor → backlight, smooth fades; see [08](docs/08-display.md#automatic-brightness) |
-| Touchscreen, buttons, accelerometer | ⏳ | Drivers load; not wired into anything yet |
+| Touchscreen | ✅ | Tap for the forecast; see [08](docs/08-display.md#touch) |
+| Buttons, accelerometer | ⏳ | Drivers load; not wired into anything yet |
 | Bluetooth | ⏳ | Module built, untested |
 | Home Assistant | 🟡 | Weather from Home Assistant on the clock face; see [09](docs/09-home-assistant.md) |
 

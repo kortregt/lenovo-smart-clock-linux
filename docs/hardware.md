@@ -20,7 +20,7 @@ numbers are `387 + SoC pin` (the SoC GPIO chip's base on this kernel).
 |---|---|---|---|
 | Display panel | ST7701S 480×800 | MIPI DSI, 2 lanes; reset GPIO 66 | Kernel LCM driver + `/dev/fb0` (patch 0004, [08](08-display.md)) |
 | Backlight | SGM37603A | i2c-2 `0x36`; enable pin 22 (GPIO 409) | Kernel driver, `lcd-backlight` LED |
-| Touch | FocalTech FT6336U | i2c-0 `0x38` | Kernel driver (`mtk-tpd`), not tested |
+| Touch | FocalTech FT6336U (chip ID `0x64`, firmware `0x17`) | i2c-0 `0x38`; interrupt EINT 8 | Kernel driver (`mtk-tpd`, `/dev/input/event1`); works ([08](08-display.md#touch)) |
 | Speaker amp | TI TAS5805M (PBTL) | i2c-2 `0x2c`; I2S 8CH out → `hw:0,0` | No driver; userspace init ([07](07-audio.md)) |
 | Mic ADC | TI TLV320ADC3101 | i2c-1 `0x1b`; enable pin 24 (GPIO 411); TDM RX → `hw:0,1` | No driver; userspace init |
 | Accelerometer | Bosch BMA253 | i2c-0 `0x18` | None |
