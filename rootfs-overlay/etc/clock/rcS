@@ -30,8 +30,13 @@ ifconfig usb0 192.168.7.2 netmask 255.255.255.0 up
 
 # Wi-Fi: MT7668 over SDIO; the driver is a module and wants its firmware in /lib/firmware.
 # Backgrounded so a slow or stuck firmware load can't hold up the serial console.
+# Modules only load into the kernel they were built with, so when a new kernel goes onto
+# boot_b its modules are put in next/ first (and the old ones kept in prev/): whichever
+# kernel boots finds a copy that loads.
 (
-	insmod /lib/modules/wlan_drv_gen4_mt7668.ko
+	for d in /lib/modules /lib/modules/next /lib/modules/prev; do
+		[ -e $d/wlan_drv_gen4_mt7668.ko ] && insmod $d/wlan_drv_gen4_mt7668.ko 2>/dev/null && break
+	done
 	for i in $(seq 1 40); do [ -e /sys/class/net/wlan0 ] && break; sleep 0.5; done
 	if [ -e /sys/class/net/wlan0 ] && grep -q '^network=' /etc/wpa_supplicant/wpa_supplicant.conf; then
 		wpa_supplicant -B -i wlan0 -c /etc/wpa_supplicant/wpa_supplicant.conf

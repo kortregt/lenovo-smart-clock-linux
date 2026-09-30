@@ -17,7 +17,7 @@ VENDOR=$PROJ/backup/parts/vendor_a.bin
 ALPINE=3.24.2
 TARBALL=alpine-minirootfs-$ALPINE-aarch64.tar.gz
 URL=https://dl-cdn.alpinelinux.org/alpine/v${ALPINE%.*}/releases/aarch64/$TARBALL
-PACKAGES="dropbear openssh-sftp-server wpa_supplicant iw alsa-utils i2c-tools ca-certificates tzdata font-inter jq"
+PACKAGES="dropbear openssh-sftp-server wpa_supplicant iw alsa-utils i2c-tools ca-certificates tzdata font-inter jq flac-libs libvorbis opusfile soxr faad2-libs libmad mpg123-libs"
 TZ_NAME=${TZ_NAME:-America/New_York}
 SIZE=512M
 OUT=$PROJ/build/system_b-alpine.img
@@ -60,6 +60,8 @@ install -m 755 "$BUILD/clockface-out/clockface" rootfs/usr/local/bin/clockface
 # Backlight from the ambient light sensor, also started from inittab.
 aarch64-linux-gnu-gcc -O2 -static -Wall -o rootfs/usr/local/bin/autobright \
 	"$PROJ/userspace/autobright.c" -lm
+# Music Assistant player (built by tools/build-squeezelite.sh).
+install -m 755 "$BUILD/squeezelite" rootfs/usr/local/bin/squeezelite
 # Buttons and mic switch.
 aarch64-linux-gnu-gcc -O2 -static -Wall -o rootfs/usr/local/bin/clockkeys \
 	"$PROJ/userspace/clockkeys.c"

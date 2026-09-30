@@ -18,6 +18,7 @@
  * shows for 2 seconds.
  *
  * Settings in /etc/clock/clockface.conf:
+ *   TIME_FORMAT=24          "12" or "24" hour time
  *   ICON_STYLE=ha           the weather icons: "ha", Home Assistant's own weather card
  *                           icons (ha-icons/, static; default), or animated "meteocons"
  *   ICON_ANIMATION=minute   with meteocons, the icon under the date: "always" animated, one
@@ -62,6 +63,7 @@ static const char *font_path = "/usr/share/fonts/inter/InterVariable.ttf";
 static enum { STYLE_METEOCONS, STYLE_HA } icon_style = STYLE_HA;
 static enum { ANIM_ALWAYS, ANIM_MINUTE, ANIM_STILL } icon_animation = ANIM_MINUTE;
 static bool icon_playing;
+static bool time_12h;
 static void play_icon_once(void);
 
 static int fb_fd;
@@ -233,7 +235,7 @@ static void update_time(lv_timer_t *t)
 
 	(void)t;
 	localtime_r(&now, &tm);
-	strftime(buf, sizeof(buf), "%H:%M", &tm);
+	strftime(buf, sizeof(buf), time_12h ? "%-I:%M" : "%H:%M", &tm);
 	if (strcmp(buf, last)) {
 		strcpy(last, buf);
 		lv_label_set_text(time_label, buf);
@@ -591,7 +593,11 @@ static void load_conf(void)
 		return;
 	while (fgets(line, sizeof(line), f)) {
 		line[strcspn(line, "\n")] = 0;
-		if (!strcmp(line, "ICON_ANIMATION=always"))
+		if (!strcmp(line, "TIME_FORMAT=12"))
+			time_12h = true;
+		else if (!strcmp(line, "TIME_FORMAT=24"))
+			time_12h = false;
+		else if (!strcmp(line, "ICON_ANIMATION=always"))
 			icon_animation = ANIM_ALWAYS;
 		else if (!strcmp(line, "ICON_ANIMATION=minute"))
 			icon_animation = ANIM_MINUTE;

@@ -12,7 +12,6 @@ INTERVAL=60
 . "$CONF"
 : "${HA_URL:?}" "${HA_TOKEN:?}" "${HA_WEATHER:=weather.forecast_home}"
 mkdir -p /run/clock
-n=0
 
 forecast() {
 	wget -q -T 10 -O - --header "Authorization: Bearer $HA_TOKEN" \
@@ -25,10 +24,11 @@ forecast() {
 }
 
 while :; do
-	if [ $((n % 10)) -eq 0 ] && f=$(forecast) && [ -n "$f" ]; then
+	# the forecast: when there's none yet, or it's 10 minutes old
+	if [ -z "$(find /run/clock/forecast -mmin -10 2>/dev/null)" ] && f=$(forecast) &&
+	   [ -n "$f" ]; then
 		printf '%s\n' "$f" > /run/clock/forecast.tmp && mv /run/clock/forecast.tmp /run/clock/forecast
 	fi
-	n=$((n + 1))
 	sun=$(wget -q -T 10 -O - --header "Authorization: Bearer $HA_TOKEN" \
 		"$HA_URL/api/states/sun.sun" | jq -r .state)
 	if json=$(wget -q -T 10 -O - --header "Authorization: Bearer $HA_TOKEN" \
@@ -45,5 +45,6 @@ while :; do
 			  "\(.attributes.temperature | round)\(.attributes.temperature_unit)  \($names[.state] // .state)"')
 		[ -n "$line" ] && printf '%s\n' "$line" > "$OUT.tmp" && mv "$OUT.tmp" "$OUT"
 	fi
-	sleep "$INTERVAL"
+	# retry soon while Home Assistant can't be reached (e.g. Wi-Fi still coming up)
+	if [ -e "$OUT" ] && [ -e /run/clock/forecast ]; then sleep "$INTERVAL"; else sleep 10; fi
 done
