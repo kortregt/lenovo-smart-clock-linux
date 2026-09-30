@@ -14,6 +14,11 @@
  * 15 seconds; tapping again hides it. The touchscreen reports panel coordinates, so touches
  * are rotated the same way as the display.
  *
+ * While Music Assistant plays on the clock, a now-playing view shows the cover, title,
+ * artist and progress with previous / play-pause / next buttons, from /run/clock/media
+ * (written by ha-media, which also sends the button presses to Home Assistant). Tapping
+ * the cover goes back to the clock; it also goes back 30 seconds after playback stops.
+ *
  * When /run/clock/volume changes (clock-volume, from the buttons or elsewhere), a volume bar
  * shows for 2 seconds.
  *
@@ -39,8 +44,10 @@
 #include <unistd.h>
 #include <linux/fb.h>
 #include <linux/input.h>
+#include <signal.h>
 
 #include "lvgl.h"
+#include "src/libs/tjpgd/tjpgd.h"	/* LVGL's copy of TJpgDec, for the cover art */
 
 #define SCREEN_W	800
 #define SCREEN_H	480
@@ -52,6 +59,9 @@
 #define FORECAST_DAYS	5
 #define FORECAST_MS	15000
 #define TOUCH_DEV	"/dev/input/event1"
+#define MEDIA_FILE	"/run/clock/media"
+#define MEDIA_CTL	"/usr/local/bin/ha-media"
+#define MEDIA_LINGER_S	30
 #define VOLUME_FILE	"/run/clock/volume"
 #define VOLUME_MAX	100
 #define VOLUME_SHOW_MS	2000
@@ -64,6 +74,7 @@ static enum { STYLE_METEOCONS, STYLE_HA } icon_style = STYLE_HA;
 static enum { ANIM_ALWAYS, ANIM_MINUTE, ANIM_STILL } icon_animation = ANIM_MINUTE;
 static bool icon_playing;
 static bool time_12h;
+static lv_obj_t *np_time;
 static void play_icon_once(void);
 
 static int fb_fd;
@@ -239,6 +250,8 @@ static void update_time(lv_timer_t *t)
 	if (strcmp(buf, last)) {
 		strcpy(last, buf);
 		lv_label_set_text(time_label, buf);
+		if (np_time)
+			lv_label_set_text(np_time, buf);
 		strftime(buf, sizeof(buf), "%A %e %B", &tm);
 		lv_label_set_text(date_label, buf);
 		if (icon_animation == ANIM_MINUTE)
@@ -613,11 +626,390 @@ static void load_conf(void)
 	fclose(f);
 }
 
+/* ---- now playing ------------------------------------------------------------------ */
+
+static struct media {
+	char state[16], title[160], artist[160], album[160], cover[128];
+	long duration, position, position_at;
+} media;
+static lv_obj_t *np_panel, *np_cover, *np_title, *np_artist, *np_bar, *np_elapsed, *np_total;
+static lv_obj_t *np_play;
+static bool np_dismissed;		/* the cover was tapped: stay on the clock */
+static time_t np_inactive_since;
+
+static bool media_active(void)
+{
+	return !strcmp(media.state, "playing") || !strcmp(media.state, "paused");
+}
+
+static void set_text_if(lv_obj_t *label, const char *text)
+{
+	if (strcmp(lv_label_get_text(label), text))
+		lv_label_set_text(label, text);
+}
+
+static void fmt_time(char *buf, size_t len, long s)
+{
+	snprintf(buf, len, "%ld:%02ld", s / 60, s % 60);
+}
+
+static void media_command(const char *cmd)
+{
+	if (fork() == 0) {
+		execl(MEDIA_CTL, MEDIA_CTL, cmd, (char *)NULL);
+		_exit(127);
+	}
+}
+
+static void on_media_button(lv_event_t *e)
+{
+	const char *cmd = lv_event_get_user_data(e);
+
+	media_command(cmd);
+	if (!strcmp(cmd, "play_pause")) {	/* show it straight away; ha-media confirms */
+		bool playing = !strcmp(media.state, "playing");
+
+		lv_label_set_text(np_play, playing ? LV_SYMBOL_PLAY : LV_SYMBOL_PAUSE);
+	}
+}
+
+static void on_cover_tap(lv_event_t *e)
+{
+	(void)e;
+	np_dismissed = true;
+	lv_obj_set_hidden(np_panel, true);
+}
+
+static void update_progress(void)
+{
+	long pos = media.position;
+	char buf[48];
+
+	if (!strcmp(media.state, "playing") && media.position_at > 0)
+		pos += time(NULL) - media.position_at;
+	if (media.duration > 0 && pos > media.duration)
+		pos = media.duration;
+	if (pos < 0)
+		pos = 0;
+	lv_bar_set_range(np_bar, 0, media.duration > 0 ? media.duration : 1);
+	lv_bar_set_value(np_bar, media.duration > 0 ? pos : 0, LV_ANIM_OFF);
+	fmt_time(buf, sizeof(buf), pos);
+	set_text_if(np_elapsed, media.duration > 0 ? buf : "");
+	fmt_time(buf, sizeof(buf), media.duration);
+	set_text_if(np_total, media.duration > 0 ? buf : "");
+}
+
+/* Reload MEDIA_FILE when it changes; returns whether it did */
+static bool load_media(void)
+{
+	static struct timespec last;
+	struct stat st;
+	char line[256], *v;
+	FILE *f;
+
+	if (stat(MEDIA_FILE, &st) ||
+	    (st.st_mtim.tv_sec == last.tv_sec && st.st_mtim.tv_nsec == last.tv_nsec))
+		return false;
+	last = st.st_mtim;
+	if (!(f = fopen(MEDIA_FILE, "r")))
+		return false;
+	/* position and position_at are kept when Home Assistant briefly has none (it drops
+	 * them while playback changes state), so the progress bar doesn't jump to 0:00 */
+	media.state[0] = media.title[0] = media.artist[0] = media.album[0] = media.cover[0] = 0;
+	media.duration = 0;
+	while (fgets(line, sizeof(line), f)) {
+		line[strcspn(line, "\n")] = 0;
+		if (!(v = strchr(line, '=')))
+			continue;
+		*v++ = 0;
+		if (!strcmp(line, "state"))
+			snprintf(media.state, sizeof(media.state), "%s", v);
+		else if (!strcmp(line, "title"))
+			snprintf(media.title, sizeof(media.title), "%s", v);
+		else if (!strcmp(line, "artist"))
+			snprintf(media.artist, sizeof(media.artist), "%s", v);
+		else if (!strcmp(line, "album"))
+			snprintf(media.album, sizeof(media.album), "%s", v);
+		else if (!strcmp(line, "cover"))
+			snprintf(media.cover, sizeof(media.cover), "%s", v);
+		else if (!strcmp(line, "duration"))
+			media.duration = atol(v);
+		else if (!strcmp(line, "position") && *v)
+			media.position = atol(v);
+		else if (!strcmp(line, "position_at") && *v)
+			media.position_at = atol(v);
+	}
+	fclose(f);
+	return true;
+}
+
+/*
+ * Cover art: decoded here in full with TJpgDec (LVGL's own decoder works in strips, which it
+ * can't scale) and box-filtered to exactly COVER_SIZE square, so LVGL just draws it. Two
+ * buffers alternate, so a new cover never replaces one that's still on screen.
+ */
+#define COVER_SIZE	320
+
+struct jpeg_src {
+	FILE *f;
+	uint8_t *rgb;		/* full image, 3 bytes per pixel (B, G, R from LVGL's TJpgDec) */
+	unsigned w;
+};
+
+static size_t jpeg_in(JDEC *jd, uint8_t *buf, size_t len)
+{
+	struct jpeg_src *src = jd->device;
+
+	if (!buf)
+		return fseek(src->f, (long)len, SEEK_CUR) ? 0 : len;
+	return fread(buf, 1, len, src->f);
+}
+
+static int jpeg_out(JDEC *jd, void *bitmap, JRECT *r)
+{
+	struct jpeg_src *src = jd->device;
+	unsigned w = r->right - r->left + 1, y;
+
+	for (y = r->top; y <= r->bottom; y++)
+		memcpy(src->rgb + ((size_t)y * src->w + r->left) * 3,
+		       (uint8_t *)bitmap + (size_t)(y - r->top) * w * 3, w * 3);
+	return 1;
+}
+
+/* Decode a JPEG file into out (COVER_SIZE^2 pixels, LVGL XRGB8888); returns 0 if it worked */
+static int decode_cover(const char *path, uint32_t *out)
+{
+	static uint8_t pool[16384];
+	struct jpeg_src src = { 0 };
+	JDEC jd;
+	unsigned x, y, iw, ih;
+	int ret = -1;
+
+	if (!(src.f = fopen(path, "rb")))
+		return -1;
+	if (jd_prepare(&jd, jpeg_in, pool, sizeof(pool), &src) != JDR_OK)
+		goto out;
+	iw = jd.width;
+	ih = jd.height;
+	src.w = iw;
+	if (!(src.rgb = malloc((size_t)iw * ih * 3)))
+		goto out;
+	if (jd_decomp(&jd, jpeg_out, 0) != JDR_OK)
+		goto out;
+	/* box filter: each output pixel averages the input pixels it covers */
+	for (y = 0; y < COVER_SIZE; y++) {
+		unsigned y0 = y * ih / COVER_SIZE, y1 = (y + 1) * ih / COVER_SIZE;
+
+		if (y1 <= y0)
+			y1 = y0 + 1;
+		for (x = 0; x < COVER_SIZE; x++) {
+			unsigned x0 = x * iw / COVER_SIZE, x1 = (x + 1) * iw / COVER_SIZE;
+			unsigned r = 0, g = 0, b = 0, n, xx, yy;
+
+			if (x1 <= x0)
+				x1 = x0 + 1;
+			n = (x1 - x0) * (y1 - y0);
+			for (yy = y0; yy < y1; yy++) {
+				const uint8_t *p = src.rgb + ((size_t)yy * iw + x0) * 3;
+
+				for (xx = x0; xx < x1; xx++, p += 3) {
+					r += p[0];
+					g += p[1];
+					b += p[2];
+				}
+			}
+			out[y * COVER_SIZE + x] = 0xff000000 | (b / n) << 16 | (g / n) << 8 | (r / n);
+		}
+	}
+	ret = 0;
+out:
+	free(src.rgb);
+	fclose(src.f);
+	return ret;
+}
+
+static void set_cover(const char *path)
+{
+	static uint32_t *buf[2];
+	static lv_image_dsc_t dsc[2];
+	static int cur;
+
+	if (!*path || (!buf[0] && (!(buf[0] = malloc(COVER_SIZE * COVER_SIZE * 4)) ||
+				   !(buf[1] = malloc(COVER_SIZE * COVER_SIZE * 4))))) {
+		lv_image_set_src(np_cover, NULL);
+		return;
+	}
+	cur = !cur;
+	if (decode_cover(path, buf[cur])) {
+		fprintf(stderr, "clockface: can't decode %s\n", path);
+		lv_image_set_src(np_cover, NULL);
+		return;
+	}
+	dsc[cur].header.magic = LV_IMAGE_HEADER_MAGIC;
+	dsc[cur].header.cf = LV_COLOR_FORMAT_XRGB8888;
+	dsc[cur].header.w = dsc[cur].header.h = COVER_SIZE;
+	dsc[cur].header.stride = COVER_SIZE * 4;
+	dsc[cur].data = (const uint8_t *)buf[cur];
+	dsc[cur].data_size = COVER_SIZE * COVER_SIZE * 4;
+	lv_image_set_src(np_cover, &dsc[cur]);
+}
+
+static void update_media(lv_timer_t *t)
+{
+	static char last_title[160], last_state[16], cover_src[140];
+	bool changed = load_media();
+
+	(void)t;
+	if (changed) {
+		char src[140] = "";
+
+		/* a new track, or starting to play, brings the view back */
+		if (strcmp(media.title, last_title) ||
+		    (!strcmp(media.state, "playing") && strcmp(last_state, "playing")))
+			np_dismissed = false;
+		snprintf(last_title, sizeof(last_title), "%s", media.title);
+		snprintf(last_state, sizeof(last_state), "%s", media.state);
+
+		set_text_if(np_title, media.title);
+		set_text_if(np_artist, media.artist);
+		set_text_if(np_play, !strcmp(media.state, "playing") ? LV_SYMBOL_PAUSE : LV_SYMBOL_PLAY);
+		snprintf(src, sizeof(src), "%s", media.cover);
+		if (strcmp(src, cover_src)) {
+			snprintf(cover_src, sizeof(cover_src), "%s", src);
+			set_cover(src);
+		}
+	}
+
+	if (media_active()) {
+		np_inactive_since = 0;
+		if (!np_dismissed && lv_obj_is_hidden(np_panel)) {
+			lv_obj_set_hidden(forecast_panel, true);
+			lv_obj_set_hidden(np_panel, false);
+		}
+	} else if (!lv_obj_is_hidden(np_panel)) {
+		if (!np_inactive_since)
+			np_inactive_since = time(NULL);
+		else if (time(NULL) - np_inactive_since >= MEDIA_LINGER_S)
+			lv_obj_set_hidden(np_panel, true);
+	}
+	if (!lv_obj_is_hidden(np_panel))
+		update_progress();
+}
+
+static lv_obj_t *media_button(lv_obj_t *parent, const char *symbol, const char *cmd)
+{
+	lv_obj_t *b = lv_obj_create(parent), *l;
+
+	lv_obj_remove_style_all(b);
+	lv_obj_set_size(b, 110, 90);
+	lv_obj_set_clickable(b, true);
+	lv_obj_set_style_radius(b, 45, 0);
+	lv_obj_set_style_bg_color(b, lv_color_hex(0x303030), LV_STATE_PRESSED);
+	lv_obj_set_style_bg_opa(b, LV_OPA_COVER, LV_STATE_PRESSED);
+	lv_obj_add_event_cb(b, on_media_button, LV_EVENT_CLICKED, (void *)cmd);
+	l = lv_label_create(b);
+	lv_label_set_text(l, symbol);
+	lv_obj_set_style_text_font(l, &lv_font_montserrat_48, 0);
+	lv_obj_set_style_text_color(l, lv_color_hex(0xe8e8e8), 0);
+	lv_obj_center(l);
+	return l;
+}
+
+static void create_now_playing(lv_obj_t *scr, const lv_font_t *title_font,
+			       const lv_font_t *text_font, const lv_font_t *small_font)
+{
+	lv_obj_t *col, *row;
+
+	np_panel = lv_obj_create(scr);
+	lv_obj_remove_style_all(np_panel);
+	lv_obj_set_size(np_panel, SCREEN_W, SCREEN_H);
+	lv_obj_set_style_bg_color(np_panel, lv_color_black(), 0);
+	lv_obj_set_style_bg_opa(np_panel, LV_OPA_COVER, 0);
+	lv_obj_set_clickable(np_panel, true);	/* don't let taps reach the clock */
+	lv_obj_set_hidden(np_panel, true);
+
+	np_cover = lv_image_create(np_panel);
+	lv_obj_set_size(np_cover, COVER_SIZE, COVER_SIZE);
+	lv_obj_align(np_cover, LV_ALIGN_LEFT_MID, 40, 0);
+	lv_obj_set_style_bg_color(np_cover, lv_color_hex(0x202020), 0);
+	lv_obj_set_style_bg_opa(np_cover, LV_OPA_COVER, 0);
+	lv_obj_set_clickable(np_cover, true);
+	lv_obj_add_event_cb(np_cover, on_cover_tap, LV_EVENT_CLICKED, NULL);
+
+	np_time = lv_label_create(np_panel);
+	lv_label_set_text(np_time, "");
+	lv_obj_set_style_text_font(np_time, text_font, 0);
+	lv_obj_set_style_text_color(np_time, lv_color_hex(0x707070), 0);
+	lv_obj_align(np_time, LV_ALIGN_TOP_RIGHT, -40, 24);
+
+	col = lv_obj_create(np_panel);
+	lv_obj_remove_style_all(col);
+	lv_obj_set_size(col, 360, LV_SIZE_CONTENT);
+	lv_obj_align(col, LV_ALIGN_TOP_LEFT, 400, 96);	/* below the small clock */
+	lv_obj_set_flex_flow(col, LV_FLEX_FLOW_COLUMN);
+	lv_obj_set_style_pad_row(col, 8, 0);
+	lv_obj_set_clickable(col, false);
+
+	np_title = lv_label_create(col);
+	/* at most two lines, then "..." */
+	lv_obj_set_size(np_title, lv_pct(100), 2 * lv_font_get_line_height(title_font));
+	lv_label_set_long_mode(np_title, LV_LABEL_LONG_MODE_DOTS);
+	lv_label_set_text(np_title, "");
+	lv_obj_set_style_text_font(np_title, title_font, 0);
+	lv_obj_set_style_text_color(np_title, lv_color_hex(0xe8e8e8), 0);
+
+	np_artist = lv_label_create(col);
+	lv_obj_set_size(np_artist, lv_pct(100), lv_font_get_line_height(text_font));
+	lv_label_set_long_mode(np_artist, LV_LABEL_LONG_MODE_DOTS);
+	lv_label_set_text(np_artist, "");
+	lv_obj_set_style_text_font(np_artist, text_font, 0);
+	lv_obj_set_style_text_color(np_artist, lv_color_hex(0x909090), 0);
+
+	np_bar = lv_bar_create(col);
+	lv_obj_set_size(np_bar, lv_pct(100), 6);
+	lv_obj_set_style_margin_top(np_bar, 28, 0);
+	lv_obj_set_style_bg_color(np_bar, lv_color_hex(0x404040), LV_PART_MAIN);
+	lv_obj_set_style_bg_opa(np_bar, LV_OPA_COVER, LV_PART_MAIN);
+	lv_obj_set_style_bg_color(np_bar, lv_color_hex(0xc0c0c0), LV_PART_INDICATOR);
+	lv_obj_set_style_radius(np_bar, 3, LV_PART_MAIN);
+	lv_obj_set_style_radius(np_bar, 3, LV_PART_INDICATOR);
+
+	row = lv_obj_create(col);
+	lv_obj_remove_style_all(row);
+	lv_obj_set_size(row, lv_pct(100), LV_SIZE_CONTENT);
+	lv_obj_set_clickable(row, false);
+	np_elapsed = lv_label_create(row);
+	lv_label_set_text(np_elapsed, "");
+	lv_obj_set_style_text_font(np_elapsed, small_font, 0);
+	lv_obj_set_style_text_color(np_elapsed, lv_color_hex(0x707070), 0);
+	lv_obj_align(np_elapsed, LV_ALIGN_LEFT_MID, 0, 0);
+	np_total = lv_label_create(row);
+	lv_label_set_text(np_total, "");
+	lv_obj_set_style_text_font(np_total, small_font, 0);
+	lv_obj_set_style_text_color(np_total, lv_color_hex(0x707070), 0);
+	lv_obj_align(np_total, LV_ALIGN_RIGHT_MID, 0, 0);
+
+	row = lv_obj_create(col);
+	lv_obj_remove_style_all(row);
+	lv_obj_set_size(row, lv_pct(100), LV_SIZE_CONTENT);
+	lv_obj_set_style_margin_top(row, 20, 0);
+	lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW);
+	lv_obj_set_flex_align(row, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_CENTER,
+			      LV_FLEX_ALIGN_CENTER);
+	lv_obj_set_clickable(row, false);
+	media_button(row, LV_SYMBOL_PREV, "previous");
+	np_play = media_button(row, LV_SYMBOL_PLAY, "play_pause");
+	media_button(row, LV_SYMBOL_NEXT, "next");
+
+	update_media(NULL);
+	lv_timer_create(update_media, 500, NULL);
+}
+
 int main(int argc, char **argv)
 {
 	static uint32_t draw_buf[2][SCREEN_W * DRAW_LINES];
 	lv_display_t *disp;
-	lv_font_t *big, *medium, *small;
+	lv_font_t *big, *medium, *small, *tiny;
 	lv_obj_t *scr, *weather_row;
 	void *ttf;
 	size_t ttf_len = 0;
@@ -633,6 +1025,7 @@ int main(int argc, char **argv)
 	}
 
 	load_conf();
+	signal(SIGCHLD, SIG_IGN);	/* ha-media commands: no zombies */
 	fb_fd = open("/dev/fb0", O_RDWR);
 	if (fb_fd < 0 || ioctl(fb_fd, FBIOGET_VSCREENINFO, &var) ||
 	    ioctl(fb_fd, FBIOGET_FSCREENINFO, &fix)) {
@@ -666,6 +1059,7 @@ int main(int argc, char **argv)
 	big = lv_tiny_ttf_create_data(ttf, ttf_len, 240);
 	medium = lv_tiny_ttf_create_data(ttf, ttf_len, 44);
 	small = lv_tiny_ttf_create_data(ttf, ttf_len, 36);
+	tiny = lv_tiny_ttf_create_data(ttf, ttf_len, 26);
 
 	scr = lv_screen_active();
 	lv_obj_set_style_bg_color(scr, lv_color_black(), 0);
@@ -700,6 +1094,7 @@ int main(int argc, char **argv)
 	lv_obj_set_style_text_color(weather_label, lv_color_hex(0x707070), 0);
 
 	create_forecast_panel(scr, small);
+	create_now_playing(scr, medium, small, tiny);
 	create_volume_panel(scr);
 	lv_obj_add_event_cb(scr, on_tap, LV_EVENT_CLICKED, NULL);
 

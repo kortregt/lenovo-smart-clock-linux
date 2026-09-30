@@ -25,11 +25,18 @@
 #define LV_USE_THORVG_INTERNAL	1
 #define LV_USE_LOTTIE		1
 
-/* LVGL's built-in font, for its symbols (the volume bar's speaker) */
+/* LVGL's built-in font, for its symbols (volume bar, media buttons) */
 #define LV_FONT_MONTSERRAT_28	1
+#define LV_FONT_MONTSERRAT_48	1
 
-/* PNG decoding (the "ha" weather icons) */
+/* PNG decoding (the "ha" weather icons) and JPEG (cover art, baseline only) from files */
 #define LV_USE_LODEPNG		1
+#define LV_USE_TJPGD		1
+#define LV_USE_FS_STDIO		1
+#define LV_FS_STDIO_LETTER	'A'
+#define LV_FS_STDIO_PATH	""
+/* keep decoded images (the cover, scaled every redraw) instead of decoding again */
+#define LV_CACHE_DEF_SIZE	(4 * 1024 * 1024)
 
 #define LV_USE_LOG		1
 #define LV_LOG_LEVEL		LV_LOG_LEVEL_WARN

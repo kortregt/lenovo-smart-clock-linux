@@ -1,0 +1,107 @@
+#!/bin/sh
+# Now playing, from Home Assistant's media player for the clock (HA_PLAYER in
+# /etc/clock/ha.conf, the Music Assistant player). Settings as for ha-poll.
+#
+#   ha-media                       poll the player (from inittab): writes /run/clock/media,
+#                                  and the cover art to /run/clock/cover-<key>.jpg
+#   ha-media play_pause|next|previous|stop    control the player (the clock face's buttons)
+#
+# /run/clock/media is key=value lines: state (playing, paused, idle, off, ...), title,
+# artist, album, duration and position (seconds), position_at (when position was measured,
+# Unix time; both empty while Home Assistant doesn't report them) and cover (the image
+# file, or empty).
+CONF=/etc/clock/ha.conf
+OUT=/run/clock/media
+
+[ -r "$CONF" ] || { echo "ha-media: no $CONF" >&2; sleep 3600; exit 1; }
+. "$CONF"
+: "${HA_URL:?}" "${HA_TOKEN:?}"
+[ -n "${HA_PLAYER:-}" ] || { echo "ha-media: no HA_PLAYER in $CONF" >&2; sleep 3600; exit 1; }
+
+get() {	# path [output file]
+	wget -q -T 10 -O "${2:--}" --header "Authorization: Bearer $HA_TOKEN" "$HA_URL$1"
+}
+
+# Cover art: Home Assistant's proxy path when it has one (Spotify's entity_picture is a
+# Spotify URL, with the proxy in entity_picture_local). A full URL elsewhere is fetched
+# without the Home Assistant token, which must only go to Home Assistant.
+get_picture() {	# path-or-url output
+	case "$1" in
+	/*) get "$1" "$2" ;;
+	*) wget -q -T 10 -O "$2" "$1" ;;
+	esac
+}
+
+case "${1:-}" in
+play_pause|next|previous|stop)
+	# Resuming Spotify Connect: Music Assistant stops the player a moment after a Spotify
+	# pause, and a plain "play" then starts Music Assistant's own queue. Selecting the
+	# Spotify Connect source again resumes the Spotify session instead.
+	last=$(cat /run/clock/media.source 2>/dev/null)
+	if [ "$1" = play_pause ] && ! grep -qx 'state=playing' $OUT 2>/dev/null; then
+		case "$last" in
+		"Spotify Connect"*)
+			exec wget -q -T 5 -O /dev/null --header "Authorization: Bearer $HA_TOKEN" \
+				--header "Content-Type: application/json" \
+				--post-data "{\"entity_id\":\"$HA_PLAYER\",\"source\":\"$last\"}" \
+				"$HA_URL/api/services/media_player/select_source" ;;
+		esac
+	fi
+	case "$1" in
+	play_pause) svc=media_play_pause ;;
+	next) svc=media_next_track ;;
+	previous) svc=media_previous_track ;;
+	stop) svc=media_stop ;;
+	esac
+	exec wget -q -T 5 -O /dev/null --header "Authorization: Bearer $HA_TOKEN" \
+		--header "Content-Type: application/json" \
+		--post-data "{\"entity_id\":\"$HA_PLAYER\"}" "$HA_URL/api/services/media_player/$svc" ;;
+'') ;;
+*)	echo "usage: ha-media [play_pause | next | previous | stop]" >&2; exit 2 ;;
+esac
+
+mkdir -p /run/clock
+rm -f /run/clock/cover-*	# from an earlier run
+cover=
+while :; do
+	if json=$(get "/api/states/$HA_PLAYER"); then
+		info=$(printf '%s' "$json" | jq -r '
+			def clean: tostring | gsub("[\n\r]"; " ");
+			.attributes as $a
+			| "state=\(.state)",
+			  "title=\($a.media_title // "" | clean)",
+			  "artist=\($a.media_artist // "" | clean)",
+			  "album=\($a.media_album_name // "" | clean)",
+			  "duration=\($a.media_duration // 0 | floor)",
+			  "position=\($a.media_position // "" | if . == "" then "" else floor end)",
+			  "position_at=\($a.media_position_updated_at // "" | if . == "" then "" else
+				sub("\\.[0-9]+"; "") | sub("\\+00:00$"; "Z") | fromdateiso8601 end)",
+			  "source=\($a.source // "" | clean)",
+			  "picture=\($a.entity_picture_local // $a.entity_picture // "")"')
+		picture=$(printf '%s\n' "$info" | sed -n 's/^picture=//p')
+		# new cover art: fetch it under a new name (the clock face caches images by name)
+		if [ -n "$picture" ]; then
+			key=$(printf '%s' "$picture" | sed -n 's/.*cache=\([0-9a-zA-Z]*\).*/\1/p')
+			[ -n "$key" ] || key=$(printf '%s' "$picture" | md5sum | cut -c1-16)
+			file=/run/clock/cover-$key.jpg
+			if [ "$file" != "$cover" ] && get_picture "$picture" "$file.tmp"; then
+				mv "$file.tmp" "$file"
+				[ -n "$cover" ] && rm -f "$cover"
+				cover=$file
+			fi
+		fi
+		{ printf '%s\n' "$info" | grep -v '^picture='
+		  [ -n "$picture" ] && echo "cover=$cover" || echo "cover="
+		} > "$OUT.tmp"
+		# only replace it when something changed (the clock face reloads on each change)
+		if cmp -s "$OUT.tmp" "$OUT"; then rm -f "$OUT.tmp"; else mv "$OUT.tmp" "$OUT"; fi
+		state=$(printf '%s\n' "$info" | sed -n 's/^state=//p')
+		# what was playing last, for resuming (see play_pause above)
+		if [ "$state" = playing ]; then
+			printf '%s\n' "$info" | sed -n 's/^source=//p' > /run/clock/media.source
+		fi
+	else
+		state=unknown
+	fi
+	case "$state" in playing|paused) sleep 2 ;; *) sleep 5 ;; esac
+done

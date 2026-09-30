@@ -29,7 +29,8 @@ soldering anything. A USB-A-to-USB-A cable is the only extra hardware.
 | Accelerometer | ⏳ | Not wired into anything yet |
 | Bluetooth | ⏳ | Module built, untested |
 | Home Assistant | 🟡 | Weather and forecast on the clock face; see [09](docs/09-home-assistant.md) |
-| Music | ✅ | Music Assistant player (squeezelite); one volume shared with the buttons; see [09](docs/09-home-assistant.md#music-music-assistant) |
+| Music | ✅ | Music Assistant player (squeezelite, Spotify Connect via MA); one volume shared with the buttons; see [09](docs/09-home-assistant.md#music-music-assistant) |
+| Now playing | ✅ | Cover, title, progress and touch controls; see [09](docs/09-home-assistant.md#now-playing) |
 
 A reference of every chip, bus address, GPIO and partition found along the way is in
 [docs/hardware.md](docs/hardware.md).
@@ -45,6 +46,7 @@ A reference of every chip, bus address, GPIO and partition found along the way i
                   ├─ audio-init: TAS5805M amp + TLV320ADC3101 mics over I2C
                   ├─ clockface: LVGL clock on /dev/fb0
                   ├─ ha-poll: weather from Home Assistant for the clock face
+                  ├─ ha-media: now playing from Home Assistant, and its controls
                   ├─ autobright: backlight from the light sensor
                   ├─ clockkeys: buttons (volume) and the mic switch
                   └─ squeezelite: Music Assistant player, volume -> amp

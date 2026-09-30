@@ -87,3 +87,24 @@ else uses 9000 (Authelia does by default) the provider fails to start, and since
 only appears once the provider exists, free the port briefly, add the provider, then set
 the CLI port to 0 (off) or another free port. Then add the Music Assistant integration to
 Home Assistant.
+
+## Now playing
+
+While something plays on the clock (Jellyfin, Spotify Connect, radio, ... through Music
+Assistant), the clock face shows the cover, title, artist and progress, with previous /
+play-pause / next buttons. Tapping the cover goes back to the clock; it goes back by itself
+30 seconds after playback stops. Pressing both hardware buttons together is play/pause too
+(`BOTH` in `keys.conf`).
+
+- [`ha-media`](../rootfs-overlay/usr/local/bin/ha-media) polls Home Assistant's media
+  player (`HA_PLAYER`) every 2 seconds while something plays, writes `/run/clock/media`,
+  and fetches the cover art through Home Assistant's image proxy (`entity_picture_local`;
+  for Spotify, `entity_picture` is a Spotify URL). `ha-media play_pause|next|previous`
+  sends the buttons' commands.
+- The cover is decoded in full with LVGL's copy of TJpgDec (LVGL's own JPEG decoder works in
+  strips, which it can't scale) and box-filtered to 320×320.
+- Spotify Connect: Music Assistant stops the player shortly after a Spotify pause, and a
+  plain "play" then starts Music Assistant's own queue. So when the last thing playing was
+  Spotify Connect, play selects that source again, which resumes the Spotify session.
+- Home Assistant sometimes reports no position while playback changes state; the clock
+  keeps the last one, so the progress bar doesn't jump back to 0:00.
