@@ -1,0 +1,56 @@
+diff --git a/drivers/misc/mediatek/video/mt8167/videox/mtkfb.c b/drivers/misc/mediatek/video/mt8167/videox/mtkfb.c
+index 4e444810..54d755dc 100644
+--- a/drivers/misc/mediatek/video/mt8167/videox/mtkfb.c
++++ b/drivers/misc/mediatek/video/mt8167/videox/mtkfb.c
+@@ -1680,6 +1680,31 @@ static int mtkfb_blank(int blank_mode, struct fb_info *info)
+ /* Callback table for the frame buffer framework. Some of these pointers
+  * will be changed according to the current setting of fb_info->accel_flags.
+  */
++#ifdef MTK_ONLY_KERNEL_DISP
++/* mmap for a framebuffer allocated from ION (not physically contiguous) */
++static int mtkfb_ion_mmap(struct fb_info *info, struct vm_area_struct *vma)
++{
++	unsigned long off = vma->vm_pgoff << PAGE_SHIFT;
++	unsigned long size = vma->vm_end - vma->vm_start;
++	unsigned long addr;
++	char *va;
++	int r;
++
++	if (off > info->fix.smem_len || size > PAGE_ALIGN(info->fix.smem_len) - off)
++		return -EINVAL;
++	vma->vm_page_prot = pgprot_writecombine(vma->vm_page_prot);
++	va = info->screen_base + off;
++	for (addr = vma->vm_start; addr < vma->vm_end; addr += PAGE_SIZE, va += PAGE_SIZE) {
++		unsigned long pfn = is_vmalloc_addr(va) ? vmalloc_to_pfn(va) : __pa(va) >> PAGE_SHIFT;
++
++		r = remap_pfn_range(vma, addr, pfn, PAGE_SIZE, vma->vm_page_prot);
++		if (r)
++			return r;
++	}
++	return 0;
++}
++#endif
++
+ static struct fb_ops mtkfb_ops = {
+ 	.owner = THIS_MODULE,
+ 	.fb_open = mtkfb_open,
+@@ -2343,6 +2368,19 @@ static int mtkfb_probe(struct platform_device *pdev)
+ 			arm_iommu_attach_device(&pdev->dev, dma_mapping);
+ 			MTKFB_LOG("mtkfb iommu attach device\n");
+ 		}
++#endif
++#ifdef MTK_ONLY_KERNEL_DISP
++		if (!is_lk_show_logo) {
++			/*
++			 * The framebuffer came from ION above: fb_base is its IOMMU address (MVA),
++			 * not a physical one, so it must not be ioremap'ed (that maps nothing, and
++			 * every write to /dev/fb0 is lost). Use ION's kernel mapping and the MVA
++			 * as they are, and map the ION pages for userspace mmap.
++			 */
++			fbdev->fb_va_base = fb_virtual_address;
++			fb_pa = fb_base;
++			mtkfb_ops.fb_mmap = mtkfb_ion_mmap;
++		} else
+ #endif
+ 		disp_hal_allocate_framebuffer(fb_base, (fb_base + vramsize - 1),
+ 					      (unsigned long *)&fbdev->fb_va_base, &fb_pa);

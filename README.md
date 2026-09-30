@@ -21,7 +21,7 @@ soldering anything. A USB-A-to-USB-A cable is the only extra hardware.
 | Alpine Linux as the default OS | ✅ | Slot B; stock Android stays on slot A; see [05](docs/05-usb-and-alpine.md) |
 | Wi-Fi (MT7668) | ✅ | Vendor module + firmware; see [06](docs/06-wifi.md) |
 | Speaker + microphones | ✅ | Amp and ADC replayed from the stock app; see [07](docs/07-audio.md) |
-| Display | ✅ | Via the display manager, like Android's hwcomposer (`/dev/fb0` stays black); see [08](docs/08-display.md) |
+| Display | ✅ | Plain `/dev/fb0` (kernel patch 0004); panel mounted sideways; see [08](docs/08-display.md) |
 | Touchscreen, buttons, light sensor, accelerometer | ⏳ | Drivers load; not wired into anything yet |
 | Bluetooth | ⏳ | Module built, untested |
 | Home Assistant integration | ⏳ | The goal: a clock/dashboard UI on the display next |
@@ -49,6 +49,7 @@ A reference of every chip, bus address, GPIO and partition found along the way i
 | [kernel/patches/](kernel/patches/) | Our changes to Google's kernel source |
 | [kernel/smartclock.config](kernel/smartclock.config) | Config options changed from stock |
 | [initramfs/](initramfs/) | The initramfs `/init` (and a tiny reboot probe used for debugging) |
+| [userspace/](userspace/) | Small programs for the clock (framebuffer test) |
 | [rootfs-overlay/](rootfs-overlay/) | Files layered onto Alpine: boot script, audio setup, inittab |
 | [tools/](tools/) | Build and helper scripts (boot image repack, initramfs, rootfs, diagnostics) |
 | [at_auth_unlock.py](at_auth_unlock.py) | AOSP's Android Things AVB unlock tool, fixed for Python 3 |

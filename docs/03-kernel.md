@@ -71,6 +71,7 @@ Apply [`kernel/patches/`](../kernel/patches/) with `git apply`:
 | 0001 dtc `yylloc` | The bundled `dtc` fails to link with host GCC ≥ 10 (`multiple definition of yylloc`) |
 | 0002 initramfs | Lets a built-in initramfs run on this bootloader ([04](04-booting-a-custom-kernel.md)) |
 | 0003 dispsys debug | `dsi_bist` / `pq_bypass` debug commands used for display bring-up ([08](08-display.md)) |
+| 0004 mtkfb | Makes `/dev/fb0` work: the driver mapped its framebuffer at a nonexistent address ([08](08-display.md)) |
 
 ## Device tree
 
