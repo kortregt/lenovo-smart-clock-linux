@@ -25,6 +25,9 @@
 #define LV_USE_THORVG_INTERNAL	1
 #define LV_USE_LOTTIE		1
 
+/* PNG decoding (the "ha" weather icons) */
+#define LV_USE_LODEPNG		1
+
 #define LV_USE_LOG		1
 #define LV_LOG_LEVEL		LV_LOG_LEVEL_WARN
 #define LV_LOG_PRINTF		1

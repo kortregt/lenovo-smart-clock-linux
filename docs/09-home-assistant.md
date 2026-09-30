@@ -16,22 +16,27 @@ Home Assistant's REST API; nothing needs to be installed in Home Assistant.
   writes `/run/clock/forecast`, one day per line: `condition|day|high|low`. Tapping the
   screen shows the next five days for 15 seconds (tap again to close it).
 
-The icons are [Meteocons](https://meteocons.com) by Bas Milius (MIT): animated, full-colour
-weather icons in Lottie format, played with LVGL's Lottie player (ThorVG). The ones used
-are in [`userspace/clockface/meteocons/`](../userspace/clockface/meteocons/), fetched from
-the npm package on jsDelivr by `fetch.sh` (pinned, since 3.x is a pre-release), and built
-into the clock face binary.
+### Icons
 
-Animation costs CPU, since each frame is rendered in software:
+Two styles, chosen with `ICON_STYLE` in
+[`/etc/clock/clockface.conf`](../rootfs-overlay/etc/clock/clockface.conf):
 
-| | CPU (one core) |
-|---|---|
-| Weather icon under the date, animated all the time | ~22% |
-| The same, one play-through a minute (default) | ~0% between minutes |
-| Forecast shown (five icons, for 15 seconds) | ~43% |
+- **`ha` (default):** Home Assistant's own weather card icons, so the clock matches the
+  dashboard. The frontend draws them from a few shared shapes (sun, moon, clouds, rain,
+  snow, lightning); [`ha-icons/generate.py`](../userspace/clockface/ha-icons/generate.py)
+  rebuilds them the same way from the frontend's `weather.ts` (Apache 2.0, pinned commit)
+  and renders PNGs at the two sizes used, which are committed and built into the binary.
+  Static, so they cost nothing to show.
+- **`meteocons`:** [Meteocons](https://meteocons.com) by Bas Milius (MIT), animated
+  full-colour Lottie icons, played with LVGL's Lottie player (ThorVG). They're in
+  [`meteocons/`](../userspace/clockface/meteocons/), fetched by `fetch.sh` (pinned, since 3.x
+  is a pre-release). Each frame is rendered in software:
 
-`ICON_ANIMATION` in [`/etc/clock/clockface.conf`](../rootfs-overlay/etc/clock/clockface.conf)
-chooses `always`, `minute` or `still` for the icon under the date.
+  | | CPU (one core) |
+  |---|---|
+  | Icon under the date, animated all the time (`ICON_ANIMATION=always`) | ~22% |
+  | One play-through a minute (`minute`, default) | ~0% between minutes |
+  | Forecast shown (five icons, for 15 seconds) | ~43% |
 
 ## Setup
 

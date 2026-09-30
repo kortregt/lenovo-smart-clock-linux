@@ -19,7 +19,7 @@ LVGL_OBJS := $(patsubst $(LVGL)/%.c,$(OUT)/lvgl/%.o,$(LVGL_SRCS)) \
 $(OUT)/clockface: $(OUT)/main.o $(OUT)/liblvgl.a
 	$(CXX) -o $@ $^ $(LDFLAGS)
 
-$(OUT)/main.o: main.c lv_conf.h $(wildcard meteocons/*.json)
+$(OUT)/main.o: main.c lv_conf.h $(wildcard meteocons/*.json ha-icons/*.png)
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -c -o $@ $<
 
