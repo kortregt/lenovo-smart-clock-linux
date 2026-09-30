@@ -5,9 +5,18 @@ Home Assistant's REST API; nothing needs to be installed in Home Assistant.
 
 - [`ha-poll`](../rootfs-overlay/usr/local/bin/ha-poll) (a shell script, started from
   `/etc/inittab`) fetches a weather entity once a minute with `wget` and `jq`, and writes
-  one line such as `76°F  Partly cloudy` to `/run/clock/weather`.
-- The clock face reads that file every 5 seconds, and hides the line if the file is
-  missing or older than 15 minutes, so it never shows stale weather.
+  two lines to `/run/clock/weather`: the condition (`partlycloudy`, or
+  `partlycloudy-night` when `sun.sun` is below the horizon) and the text
+  (`76°F  Partly cloudy`).
+- The clock face reads that file every 5 seconds and shows the condition as an icon next
+  to the text. It hides both if the file is missing or older than 15 minutes, so it never
+  shows stale weather.
+
+The icons are Home Assistant's own weather icons from
+[Material Design Icons](https://pictogrammers.com/library/mdi/) (Apache 2.0): a 4 KB subset
+of the font, [`userspace/clockface/fonts/mdi-weather.ttf`](../userspace/clockface/fonts/),
+built into the clock face binary. To add icons, subset the full font again with
+`python3 -m fontTools.subset materialdesignicons-webfont.ttf --unicodes=U+F0599,...`.
 
 ## Setup
 

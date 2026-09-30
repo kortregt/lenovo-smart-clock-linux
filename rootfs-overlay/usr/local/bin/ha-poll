@@ -1,7 +1,8 @@
 #!/bin/sh
 # Poll Home Assistant for the clock face. Settings (URL, token, entities) are in
-# /etc/clock/ha.conf; see ha.conf.example. Writes /run/clock/weather, one line of text,
-# which clockface shows under the date.
+# /etc/clock/ha.conf; see ha.conf.example. Writes /run/clock/weather for clockface: the
+# condition (the icon to draw, with "-night" for partly cloudy after sunset) on the first
+# line, and the text to show under the date on the second.
 CONF=/etc/clock/ha.conf
 OUT=/run/clock/weather
 INTERVAL=60
@@ -12,16 +13,20 @@ INTERVAL=60
 mkdir -p /run/clock
 
 while :; do
+	sun=$(wget -q -T 10 -O - --header "Authorization: Bearer $HA_TOKEN" \
+		"$HA_URL/api/states/sun.sun" | jq -r .state)
 	if json=$(wget -q -T 10 -O - --header "Authorization: Bearer $HA_TOKEN" \
 			"$HA_URL/api/states/$HA_WEATHER"); then
-		line=$(printf '%s' "$json" | jq -r '
+		line=$(printf '%s' "$json" | jq -r --arg sun "$sun" '
 			{ "clear-night": "Clear", "cloudy": "Cloudy", "exceptional": "Severe weather",
 			  "fog": "Fog", "hail": "Hail", "lightning": "Thunderstorms",
 			  "lightning-rainy": "Thunderstorms", "partlycloudy": "Partly cloudy",
 			  "pouring": "Heavy rain", "rainy": "Rain", "snowy": "Snow",
 			  "snowy-rainy": "Sleet", "sunny": "Sunny", "windy": "Windy",
 			  "windy-variant": "Windy" } as $names
-			| "\(.attributes.temperature | round)\(.attributes.temperature_unit)  \($names[.state] // .state)"')
+			| (if .state == "partlycloudy" and $sun == "below_horizon"
+			   then "partlycloudy-night" else .state end),
+			  "\(.attributes.temperature | round)\(.attributes.temperature_unit)  \($names[.state] // .state)"')
 		[ -n "$line" ] && printf '%s\n' "$line" > "$OUT.tmp" && mv "$OUT.tmp" "$OUT"
 	fi
 	sleep "$INTERVAL"

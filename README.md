@@ -78,4 +78,6 @@ vendor firmware blobs (extracted from your own `vendor_a` partition by
 - [untocodes/lenovo-cube-hacking](https://github.com/untocodes/lenovo-cube-hacking) for
   collected community notes, including the UART pinout
 - [bkerler/mtkclient](https://github.com/bkerler/mtkclient) for BootROM access
+- [LVGL](https://lvgl.io), [Inter](https://rsms.me/inter/) and
+  [Material Design Icons](https://pictogrammers.com/library/mdi/) for the clock face
 - [skylot/jadx](https://github.com/skylot/jadx), used to read the stock app's hardware setup

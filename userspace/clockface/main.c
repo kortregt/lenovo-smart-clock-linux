@@ -5,8 +5,10 @@
  * the 480x800 framebuffer (the panel is mounted sideways) and pans after the last area of a
  * frame, because the display only composes a new frame on a pan (docs/08-display.md).
  *
- * Under the date it shows one line of text from /run/clock/weather (written by ha-poll
- * from Home Assistant), hidden when that file is missing or older than 15 minutes.
+ * Under the date it shows the weather from /run/clock/weather (written by ha-poll from
+ * Home Assistant): the condition on the first line, drawn as a Material Design Icons
+ * weather icon (fonts/mdi-weather.ttf, built into the binary), and the text on the second.
+ * Hidden when that file is missing or older than 15 minutes.
  *
  *   clockface [-f font.ttf]
  */
@@ -37,7 +39,34 @@ static struct fb_var_screeninfo var;
 static struct fb_fix_screeninfo fix;
 static unsigned char *fb;
 
-static lv_obj_t *time_label, *date_label, *weather_label;
+static lv_obj_t *time_label, *date_label, *weather_icon, *weather_label;
+
+/* fonts/mdi-weather.ttf: a subset of Material Design Icons (Apache 2.0) */
+extern const unsigned char mdi_weather_ttf[], mdi_weather_ttf_end[];
+__asm__(".section .rodata\n"
+	".global mdi_weather_ttf\n.global mdi_weather_ttf_end\n"
+	"mdi_weather_ttf:\n.incbin \"fonts/mdi-weather.ttf\"\nmdi_weather_ttf_end:\n"
+	".previous\n");
+
+/* Home Assistant weather conditions -> Material Design Icons codepoints */
+static const struct { const char *condition; uint32_t codepoint; } weather_icons[] = {
+	{ "sunny", 0xF0599 },		/* weather-sunny */
+	{ "clear-night", 0xF0594 },	/* weather-night */
+	{ "partlycloudy", 0xF0595 },	/* weather-partly-cloudy */
+	{ "partlycloudy-night", 0xF0F31 }, /* weather-night-partly-cloudy */
+	{ "cloudy", 0xF0590 },		/* weather-cloudy */
+	{ "fog", 0xF0591 },		/* weather-fog */
+	{ "hail", 0xF0592 },		/* weather-hail */
+	{ "lightning", 0xF0593 },	/* weather-lightning */
+	{ "lightning-rainy", 0xF067E },	/* weather-lightning-rainy */
+	{ "pouring", 0xF0596 },		/* weather-pouring */
+	{ "rainy", 0xF0597 },		/* weather-rainy */
+	{ "snowy", 0xF0598 },		/* weather-snowy */
+	{ "snowy-rainy", 0xF067F },	/* weather-snowy-rainy */
+	{ "windy", 0xF059D },		/* weather-windy */
+	{ "windy-variant", 0xF059E },	/* weather-windy-variant */
+	{ "exceptional", 0xF05D6 },	/* alert-circle-outline */
+};
 
 static uint32_t tick_ms(void)
 {
@@ -113,29 +142,56 @@ static void update_time(lv_timer_t *t)
 	}
 }
 
+/* The icon for a condition, as a UTF-8 string; empty if unknown */
+static void weather_icon_text(const char *condition, char out[5])
+{
+	uint32_t cp = 0;
+	size_t i;
+
+	for (i = 0; i < sizeof(weather_icons) / sizeof(weather_icons[0]); i++)
+		if (!strcmp(condition, weather_icons[i].condition))
+			cp = weather_icons[i].codepoint;
+	if (!cp) {
+		out[0] = 0;
+		return;
+	}
+	out[0] = 0xf0 | (cp >> 18);
+	out[1] = 0x80 | ((cp >> 12) & 0x3f);
+	out[2] = 0x80 | ((cp >> 6) & 0x3f);
+	out[3] = 0x80 | (cp & 0x3f);
+	out[4] = 0;
+}
+
 static void update_weather(lv_timer_t *t)
 {
-	char buf[96] = "";
+	char condition[32] = "", text[96] = "", icon[5];
 	struct stat st;
 	FILE *f;
 
 	(void)t;
 	if (stat(WEATHER_FILE, &st) == 0 && time(NULL) - st.st_mtime < WEATHER_MAX_AGE &&
 	    (f = fopen(WEATHER_FILE, "r"))) {
-		if (fgets(buf, sizeof(buf), f))
-			buf[strcspn(buf, "\n")] = 0;
+		if (fgets(condition, sizeof(condition), f) && fgets(text, sizeof(text), f)) {
+			condition[strcspn(condition, "\n")] = 0;
+			text[strcspn(text, "\n")] = 0;
+		} else {
+			condition[0] = text[0] = 0;
+		}
 		fclose(f);
 	}
-	if (strcmp(buf, lv_label_get_text(weather_label)))
-		lv_label_set_text(weather_label, buf);
+	weather_icon_text(condition, icon);
+	if (strcmp(icon, lv_label_get_text(weather_icon)))
+		lv_label_set_text(weather_icon, icon);
+	if (strcmp(text, lv_label_get_text(weather_label)))
+		lv_label_set_text(weather_label, text);
 }
 
 int main(int argc, char **argv)
 {
 	static uint32_t draw_buf[2][SCREEN_W * DRAW_LINES];
 	lv_display_t *disp;
-	lv_font_t *big, *medium, *small;
-	lv_obj_t *scr;
+	lv_font_t *big, *medium, *small, *icons;
+	lv_obj_t *scr, *weather_row;
 	void *ttf;
 	size_t ttf_len = 0;
 	int opt;
@@ -181,6 +237,7 @@ int main(int argc, char **argv)
 	big = lv_tiny_ttf_create_data(ttf, ttf_len, 240);
 	medium = lv_tiny_ttf_create_data(ttf, ttf_len, 44);
 	small = lv_tiny_ttf_create_data(ttf, ttf_len, 36);
+	icons = lv_tiny_ttf_create_data(mdi_weather_ttf, mdi_weather_ttf_end - mdi_weather_ttf, 48);
 
 	scr = lv_screen_active();
 	lv_obj_set_style_bg_color(scr, lv_color_black(), 0);
@@ -196,11 +253,25 @@ int main(int argc, char **argv)
 	lv_obj_set_style_text_color(date_label, lv_color_hex(0x909090), 0);
 	lv_obj_align(date_label, LV_ALIGN_CENTER, 0, 100);
 
-	weather_label = lv_label_create(scr);
+	/* weather: icon and text side by side, centred as a pair */
+	weather_row = lv_obj_create(scr);
+	lv_obj_remove_style_all(weather_row);
+	lv_obj_set_size(weather_row, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
+	lv_obj_set_flex_flow(weather_row, LV_FLEX_FLOW_ROW);
+	lv_obj_set_flex_align(weather_row, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER,
+			      LV_FLEX_ALIGN_CENTER);
+	lv_obj_set_style_pad_column(weather_row, 14, 0);
+	lv_obj_align(weather_row, LV_ALIGN_CENTER, 0, 165);
+
+	weather_icon = lv_label_create(weather_row);
+	lv_label_set_text(weather_icon, "");
+	lv_obj_set_style_text_font(weather_icon, icons, 0);
+	lv_obj_set_style_text_color(weather_icon, lv_color_hex(0x909090), 0);
+
+	weather_label = lv_label_create(weather_row);
 	lv_label_set_text(weather_label, "");
 	lv_obj_set_style_text_font(weather_label, small, 0);
-	lv_obj_set_style_text_color(weather_label, lv_color_hex(0x606060), 0);
-	lv_obj_align(weather_label, LV_ALIGN_CENTER, 0, 160);
+	lv_obj_set_style_text_color(weather_label, lv_color_hex(0x707070), 0);
 
 	update_time(NULL);
 	lv_timer_create(update_time, 1000, NULL);
