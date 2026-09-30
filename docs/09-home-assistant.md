@@ -93,7 +93,8 @@ Home Assistant.
 While something plays on the clock (Jellyfin, Spotify Connect, radio, ... through Music
 Assistant), the clock face shows the cover, title, artist and progress, with previous /
 play-pause / next buttons. Tapping the cover goes back to the clock; it goes back by itself
-30 seconds after playback stops. Pressing both hardware buttons together is play/pause too
+30 seconds after playback stops. While music plays behind the clock, a pill at the bottom
+of the clock face shows the track, and tapping it brings the now-playing view back. Pressing both hardware buttons together is play/pause too
 (`BOTH` in `keys.conf`).
 
 - [`ha-media`](../rootfs-overlay/usr/local/bin/ha-media) polls Home Assistant's media

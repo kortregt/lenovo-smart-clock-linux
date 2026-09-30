@@ -18,6 +18,8 @@
  * artist and progress with previous / play-pause / next buttons, from /run/clock/media
  * (written by ha-media, which also sends the button presses to Home Assistant). Tapping
  * the cover goes back to the clock; it also goes back 30 seconds after playback stops.
+ * While music plays behind the clock, a pill at the bottom shows the track; tapping it
+ * brings the now-playing view back.
  *
  * When /run/clock/volume changes (clock-volume, from the buttons or elsewhere), a volume bar
  * shows for 2 seconds.
@@ -633,7 +635,7 @@ static struct media {
 	long duration, position, position_at;
 } media;
 static lv_obj_t *np_panel, *np_cover, *np_title, *np_artist, *np_bar, *np_elapsed, *np_total;
-static lv_obj_t *np_play;
+static lv_obj_t *np_play, *np_pill, *np_pill_text;
 static bool np_dismissed;		/* the cover was tapped: stay on the clock */
 static time_t np_inactive_since;
 
@@ -678,6 +680,28 @@ static void on_cover_tap(lv_event_t *e)
 	(void)e;
 	np_dismissed = true;
 	lv_obj_set_hidden(np_panel, true);
+}
+
+static void on_pill_tap(lv_event_t *e)
+{
+	(void)e;
+	np_dismissed = false;
+	lv_obj_set_hidden(forecast_panel, true);
+	lv_obj_set_hidden(np_panel, false);
+}
+
+/* The pill shows while music plays behind the clock; the clock moves up to make room */
+static void update_pill(void)
+{
+	bool show = media_active() && lv_obj_is_hidden(np_panel);
+	int32_t dy = show ? -36 : 0;
+
+	if (show == !lv_obj_is_hidden(np_pill))
+		return;
+	lv_obj_set_hidden(np_pill, !show);
+	lv_obj_set_style_translate_y(time_label, dy, 0);
+	lv_obj_set_style_translate_y(date_label, dy, 0);
+	lv_obj_set_style_translate_y(lv_obj_get_parent(weather_icon.obj), dy, 0);
 }
 
 static void update_progress(void)
@@ -872,6 +896,13 @@ static void update_media(lv_timer_t *t)
 
 		set_text_if(np_title, media.title);
 		set_text_if(np_artist, media.artist);
+		{
+			char pill[340];
+
+			snprintf(pill, sizeof(pill), *media.artist ? "%s  ·  %s" : "%s", media.title,
+				 media.artist);
+			set_text_if(np_pill_text, pill);
+		}
 		set_text_if(np_play, !strcmp(media.state, "playing") ? LV_SYMBOL_PAUSE : LV_SYMBOL_PLAY);
 		snprintf(src, sizeof(src), "%s", media.cover);
 		if (strcmp(src, cover_src)) {
@@ -894,6 +925,7 @@ static void update_media(lv_timer_t *t)
 	}
 	if (!lv_obj_is_hidden(np_panel))
 		update_progress();
+	update_pill();
 }
 
 static lv_obj_t *media_button(lv_obj_t *parent, const char *symbol, const char *cmd)
@@ -1000,6 +1032,37 @@ static void create_now_playing(lv_obj_t *scr, const lv_font_t *title_font,
 	media_button(row, LV_SYMBOL_PREV, "previous");
 	np_play = media_button(row, LV_SYMBOL_PLAY, "play_pause");
 	media_button(row, LV_SYMBOL_NEXT, "next");
+
+	/* the pill, on the clock face itself */
+	np_pill = lv_obj_create(scr);
+	lv_obj_remove_style_all(np_pill);
+	lv_obj_set_size(np_pill, LV_SIZE_CONTENT, 56);
+	lv_obj_align(np_pill, LV_ALIGN_BOTTOM_MID, 0, -14);
+	lv_obj_set_style_bg_color(np_pill, lv_color_hex(0x181818), 0);
+	lv_obj_set_style_bg_opa(np_pill, LV_OPA_COVER, 0);
+	lv_obj_set_style_radius(np_pill, 28, 0);
+	lv_obj_set_style_pad_hor(np_pill, 24, 0);
+	lv_obj_set_style_pad_column(np_pill, 14, 0);
+	lv_obj_set_flex_flow(np_pill, LV_FLEX_FLOW_ROW);
+	lv_obj_set_flex_align(np_pill, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER,
+			      LV_FLEX_ALIGN_CENTER);
+	lv_obj_set_clickable(np_pill, true);
+	lv_obj_add_event_cb(np_pill, on_pill_tap, LV_EVENT_CLICKED, NULL);
+	lv_obj_set_hidden(np_pill, true);
+	{
+		lv_obj_t *note = lv_label_create(np_pill);
+
+		lv_label_set_text(note, LV_SYMBOL_AUDIO);
+		lv_obj_set_style_text_font(note, &lv_font_montserrat_28, 0);
+		lv_obj_set_style_text_color(note, lv_color_hex(0x909090), 0);
+	}
+	np_pill_text = lv_label_create(np_pill);
+	lv_obj_set_style_max_width(np_pill_text, 560, 0);
+	lv_label_set_long_mode(np_pill_text, LV_LABEL_LONG_MODE_DOTS);
+	lv_obj_set_height(np_pill_text, lv_font_get_line_height(small_font));
+	lv_label_set_text(np_pill_text, "");
+	lv_obj_set_style_text_font(np_pill_text, small_font, 0);
+	lv_obj_set_style_text_color(np_pill_text, lv_color_hex(0xc0c0c0), 0);
 
 	update_media(NULL);
 	lv_timer_create(update_media, 500, NULL);
