@@ -1,7 +1,7 @@
 #!/bin/sh
 # Build the Alpine root filesystem image for the clock's system_b partition (512 MiB).
 # Run as root in the Linux build environment (needs qemu-aarch64 binfmt for the chroot,
-# aarch64-linux-gnu-gcc, and LVGL v9.6 in $BUILD/lvgl for the clock face):
+# aarch64-linux-gnu-gcc and -g++, and LVGL v9.6 in $BUILD/lvgl for the clock face):
 #   sudo BUILD=/path/to/build SSH_PUBKEY=/path/to/id_ed25519.pub sh tools/mkrootfs.sh
 # Flash from the Mac with the clock in fastboot mode:
 #   fastboot flash system_b build/system_b-alpine.img
