@@ -1,0 +1,51 @@
+# A dashboard card for the Smart Clock's alarms (built-in cards only). In a dashboard:
+# Edit dashboard -> Add card -> Manual, and paste this in.
+type: vertical-stack
+cards:
+  - type: tile
+    entity: sensor.smart_clock_next_alarm
+    name: Next alarm
+    icon: mdi:alarm
+  - type: grid
+    columns: 3
+    square: false
+    cards:
+      - type: entities
+        title: Alarm 1
+        state_color: true
+        entities:
+          - entity: input_boolean.smart_clock_alarm_1
+            name: "On"
+          - entity: input_datetime.smart_clock_alarm_1_time
+            name: Time
+          - entity: input_select.smart_clock_alarm_1_days
+            name: Days
+      - type: entities
+        title: Alarm 2
+        state_color: true
+        entities:
+          - entity: input_boolean.smart_clock_alarm_2
+            name: "On"
+          - entity: input_datetime.smart_clock_alarm_2_time
+            name: Time
+          - entity: input_select.smart_clock_alarm_2_days
+            name: Days
+      - type: entities
+        title: Alarm 3
+        state_color: true
+        entities:
+          - entity: input_boolean.smart_clock_alarm_3
+            name: "On"
+          - entity: input_datetime.smart_clock_alarm_3_time
+            name: Time
+          - entity: input_select.smart_clock_alarm_3_days
+            name: Days
+  - type: entities
+    title: Alarm sound
+    entities:
+      - entity: input_text.smart_clock_alarm_media
+        name: Music (empty = chime)
+      - entity: input_select.smart_clock_alarm_media_type
+        name: Music type
+      - entity: input_number.smart_clock_alarm_volume
+        name: Volume

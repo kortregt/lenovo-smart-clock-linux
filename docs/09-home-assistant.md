@@ -118,7 +118,10 @@ Three alarms, set in Home Assistant helpers from the package
 in `configuration.yaml`): for each alarm an on/off switch, a time and its days (Every day,
 Weekdays, Weekends, or Once, which switches itself off after ringing), plus the alarm music
 (a Music Assistant name or URI, and its type) and volume. They're dashboard controls and can
-be used in automations.
+be used in automations. The package also has a `sensor.smart_clock_next_alarm` (a timestamp,
+so dashboards show "in 9 hours"), and
+[`homeassistant/dashboard-card.yaml`](../homeassistant/dashboard-card.yaml) is a card that
+lays the alarms out side by side (Edit dashboard → Add card → Manual).
 
 [`clock-alarm`](../rootfs-overlay/usr/local/bin/clock-alarm) (from `/etc/inittab`) reads the
 helpers every minute and keeps a copy on the clock, so alarms ring even when Home Assistant

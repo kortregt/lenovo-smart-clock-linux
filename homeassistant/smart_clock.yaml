@@ -76,3 +76,32 @@ input_number:
     max: 100
     step: 5
     mode: slider
+
+# The next alarm, for dashboards ("in 9 hours") and automations. Unavailable while all
+# alarms are off.
+template:
+  - sensor:
+      - name: Smart Clock next alarm
+        unique_id: smart_clock_next_alarm
+        icon: mdi:alarm
+        device_class: timestamp
+        availability: >
+          {{ is_state('input_boolean.smart_clock_alarm_1', 'on')
+             or is_state('input_boolean.smart_clock_alarm_2', 'on')
+             or is_state('input_boolean.smart_clock_alarm_3', 'on') }}
+        state: >
+          {%- set ns = namespace(best=none) -%}
+          {%- for i in [1, 2, 3] if is_state('input_boolean.smart_clock_alarm_' ~ i, 'on') -%}
+            {%- set t = states('input_datetime.smart_clock_alarm_' ~ i ~ '_time') -%}
+            {%- set days = states('input_select.smart_clock_alarm_' ~ i ~ '_days') -%}
+            {%- for d in range(8) -%}
+              {%- set dt = today_at(t) + timedelta(days=d) -%}
+              {%- set wd = dt.isoweekday() -%}
+              {%- if dt > now() and (days in ['Every day', 'Once'] or (days == 'Weekdays' and wd <= 5)
+                    or (days == 'Weekends' and wd >= 6)) -%}
+                {%- if ns.best is none or dt < ns.best -%}{%- set ns.best = dt -%}{%- endif -%}
+                {%- break -%}
+              {%- endif -%}
+            {%- endfor -%}
+          {%- endfor -%}
+          {{ ns.best.isoformat() if ns.best is not none else '' }}
