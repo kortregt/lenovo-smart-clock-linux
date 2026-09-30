@@ -17,7 +17,7 @@ VENDOR=$PROJ/backup/parts/vendor_a.bin
 ALPINE=3.24.2
 TARBALL=alpine-minirootfs-$ALPINE-aarch64.tar.gz
 URL=https://dl-cdn.alpinelinux.org/alpine/v${ALPINE%.*}/releases/aarch64/$TARBALL
-PACKAGES="dropbear openssh-sftp-server wpa_supplicant iw alsa-utils i2c-tools ca-certificates tzdata font-inter jq flac-libs libvorbis opusfile soxr faad2-libs libmad mpg123-libs"
+PACKAGES="dropbear openssh-sftp-server wpa_supplicant iw alsa-utils i2c-tools ca-certificates tzdata font-inter jq flac-libs libvorbis opusfile soxr faad2-libs libmad mpg123-libs dbus bluez bluez-alsa bluez-alsa-utils bluez-tools"
 TZ_NAME=${TZ_NAME:-America/New_York}
 SIZE=512M
 OUT=$PROJ/build/system_b-alpine.img
@@ -62,6 +62,9 @@ aarch64-linux-gnu-gcc -O2 -static -Wall -o rootfs/usr/local/bin/autobright \
 	"$PROJ/userspace/autobright.c" -lm
 # Music Assistant player (built by tools/build-squeezelite.sh).
 install -m 755 "$BUILD/squeezelite" rootfs/usr/local/bin/squeezelite
+# Bluetooth: MediaTek's /dev/stpbt relayed to BlueZ.
+mkdir -p rootfs/usr/local/sbin
+aarch64-linux-gnu-gcc -O2 -static -Wall -o rootfs/usr/local/sbin/btrelay "$PROJ/userspace/btrelay.c"
 # Buttons and mic switch.
 aarch64-linux-gnu-gcc -O2 -static -Wall -o rootfs/usr/local/bin/clockkeys \
 	"$PROJ/userspace/clockkeys.c"

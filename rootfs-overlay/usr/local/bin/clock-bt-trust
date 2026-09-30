@@ -1,0 +1,12 @@
+#!/bin/sh
+# Trust paired Bluetooth devices (every 10 s), so they can reconnect after a reboot: for an
+# untrusted device BlueZ asks the agent to authorize each profile connection, and bt-agent,
+# with nobody at a keyboard, refuses. Pairing itself needs no PIN (bt-agent), so a device
+# is trusted once someone has paired it.
+while :; do
+	for d in $(bluetoothctl devices Paired 2>/dev/null | cut -d" " -f2); do
+		bluetoothctl info "$d" 2>/dev/null | grep -q "Trusted: yes" ||
+			bluetoothctl trust "$d" >/dev/null 2>&1
+	done
+	sleep 10
+done

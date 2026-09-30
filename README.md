@@ -27,7 +27,7 @@ soldering anything. A USB-A-to-USB-A cable is the only extra hardware.
 | Touchscreen | ✅ | Tap for the forecast; see [08](docs/08-display.md#touch) |
 | Buttons + mic switch | ✅ | Volume up/down (hardware amp volume); combos configurable; see [07](docs/07-audio.md#volume-and-buttons) |
 | Accelerometer | ⏳ | Not wired into anything yet |
-| Bluetooth | ⏳ | Module built, untested |
+| Bluetooth | ✅ | Bluetooth speaker (A2DP sink) through a relay to BlueZ; see [10](docs/10-bluetooth.md) |
 | Home Assistant | 🟡 | Weather and forecast on the clock face; see [09](docs/09-home-assistant.md) |
 | Music | ✅ | Music Assistant player (squeezelite, Spotify Connect via MA); one volume shared with the buttons; see [09](docs/09-home-assistant.md#music-music-assistant) |
 | Now playing | ✅ | Cover, title, progress and touch controls; see [09](docs/09-home-assistant.md#now-playing) |
@@ -51,7 +51,8 @@ A reference of every chip, bus address, GPIO and partition found along the way i
                   ├─ clock-alarm: alarms from Home Assistant helpers
                   ├─ autobright: backlight from the light sensor
                   ├─ clockkeys: buttons (volume) and the mic switch
-                  └─ squeezelite: Music Assistant player, volume -> amp
+                  ├─ squeezelite: Music Assistant player, volume -> amp
+                  └─ BlueZ + btrelay + bluez-alsa: Bluetooth speaker
  slot A: untouched stock Android Things    -> `fastboot set_active a` to go back
 ```
 

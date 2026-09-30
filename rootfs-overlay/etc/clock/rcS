@@ -22,6 +22,7 @@ ifconfig lo 127.0.0.1 up
 
 # Speaker amp (TAS5805M on i2c-2) needs userspace setup; see the script.
 /etc/clock/audio-init.sh
+mkdir -p /run/dbus /var/lib/bluealsa
 # Saved speaker volume (audio-init leaves the amp at 0 dB)
 /usr/local/bin/clock-volume restore >/dev/null
 
@@ -36,6 +37,10 @@ ifconfig usb0 192.168.7.2 netmask 255.255.255.0 up
 (
 	for d in /lib/modules /lib/modules/next /lib/modules/prev; do
 		[ -e $d/wlan_drv_gen4_mt7668.ko ] && insmod $d/wlan_drv_gen4_mt7668.ko 2>/dev/null && break
+	done
+	# Bluetooth, the same chip's other SDIO function: /dev/stpbt for btrelay (inittab)
+	for d in /lib/modules /lib/modules/next /lib/modules/prev; do
+		[ -e $d/btmtksdio.ko ] && insmod $d/btmtksdio.ko 2>/dev/null && break
 	done
 	for i in $(seq 1 40); do [ -e /sys/class/net/wlan0 ] && break; sleep 0.5; done
 	if [ -e /sys/class/net/wlan0 ] && grep -q '^network=' /etc/wpa_supplicant/wpa_supplicant.conf; then

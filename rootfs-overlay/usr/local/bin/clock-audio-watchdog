@@ -1,0 +1,32 @@
+#!/bin/sh
+# Restart the speaker stream if it freezes. Sometimes (reliably when a Bluetooth phone's
+# audio first starts after boot) MediaTek's audio stops moving its playback pointer while
+# ALSA still reports the stream as running; every client of the shared dmix then blocks
+# forever. A fresh stream always works, so: if the pointer hasn't moved for 2 seconds while
+# running, kill whatever holds the device; they're all respawned by init (aplay keep-alive,
+# bluealsa-aplay, squeezelite) or retried (clock-alarm's chime).
+STATUS=/proc/asound/card0/pcm0p/sub0/status
+DEV=/dev/snd/pcmC0D0p
+prev=
+stuck=0
+while :; do
+	sleep 1
+	st=$(sed -n 's/^state: //p; s/^hw_ptr *: //p' $STATUS 2>/dev/null | tr '\n' ' ')
+	case "$st" in
+	RUNNING*)
+		if [ "$st" = "$prev" ]; then stuck=$((stuck + 1)); else stuck=0; fi ;;
+	*)	stuck=0 ;;
+	esac
+	prev=$st
+	[ $stuck -ge 2 ] || continue
+	pids=
+	for f in /proc/[0-9]*/fd/*; do
+		[ "$(readlink "$f" 2>/dev/null)" = $DEV ] || continue
+		p=${f#/proc/}; pids="$pids ${p%%/*}"
+	done
+	echo "clock-audio-watchdog: stream frozen ($st), restarting:$pids" > /dev/kmsg
+	[ -n "$pids" ] && kill -9 $pids
+	stuck=0
+	prev=
+	sleep 3
+done
