@@ -14,6 +14,9 @@
  * 15 seconds; tapping again hides it. The touchscreen reports panel coordinates, so touches
  * are rotated the same way as the display.
  *
+ * When /run/clock/volume changes (clock-volume, from the buttons or elsewhere), a volume bar
+ * shows for 2 seconds.
+ *
  * Settings in /etc/clock/clockface.conf:
  *   ICON_STYLE=ha           the weather icons: "ha", Home Assistant's own weather card
  *                           icons (ha-icons/, static; default), or animated "meteocons"
@@ -48,6 +51,9 @@
 #define FORECAST_DAYS	5
 #define FORECAST_MS	15000
 #define TOUCH_DEV	"/dev/input/event1"
+#define VOLUME_FILE	"/run/clock/volume"
+#define VOLUME_MAX	20
+#define VOLUME_SHOW_MS	2000
 
 #define CONF_FILE	"/etc/clock/clockface.conf"
 
@@ -67,6 +73,8 @@ static lv_obj_t *time_label, *date_label, *weather_label;
 static lv_obj_t *forecast_panel, *fc_day[FORECAST_DAYS];
 static lv_obj_t *fc_high[FORECAST_DAYS], *fc_low[FORECAST_DAYS];
 static lv_timer_t *forecast_timer;
+static lv_obj_t *vol_panel, *vol_icon, *vol_bar;
+static lv_timer_t *vol_hide_timer;
 
 static int touch_fd = -1;
 static int touch_x, touch_y, touch_down, touch_tapped;
@@ -450,6 +458,85 @@ static void on_tap(lv_event_t *e)
 	}
 }
 
+static void hide_volume(lv_timer_t *t)
+{
+	(void)t;
+	lv_obj_set_hidden(vol_panel, true);
+	lv_timer_pause(vol_hide_timer);
+}
+
+/* Show the volume bar when VOLUME_FILE changes (not for its state at startup) */
+static void check_volume(lv_timer_t *t)
+{
+	static struct timespec last;
+	static bool started;
+	struct stat st;
+	FILE *f;
+	int level = -1;
+
+	(void)t;
+	if (stat(VOLUME_FILE, &st))
+		return;
+	if (st.st_mtim.tv_sec == last.tv_sec && st.st_mtim.tv_nsec == last.tv_nsec)
+		return;
+	last = st.st_mtim;
+	if (!started) {
+		started = true;
+		return;
+	}
+	if ((f = fopen(VOLUME_FILE, "r"))) {
+		if (fscanf(f, "%d", &level) != 1)
+			level = -1;
+		fclose(f);
+	}
+	if (level < 0)
+		return;
+	lv_bar_set_value(vol_bar, level, LV_ANIM_OFF);
+	lv_label_set_text(vol_icon, level == 0 ? LV_SYMBOL_MUTE :
+			  level < VOLUME_MAX / 2 ? LV_SYMBOL_VOLUME_MID : LV_SYMBOL_VOLUME_MAX);
+	lv_obj_set_hidden(vol_panel, false);
+	lv_timer_reset(vol_hide_timer);
+	lv_timer_resume(vol_hide_timer);
+}
+
+static void create_volume_panel(lv_obj_t *scr)
+{
+	vol_panel = lv_obj_create(scr);
+	lv_obj_remove_style_all(vol_panel);
+	lv_obj_set_size(vol_panel, 520, 90);
+	lv_obj_align(vol_panel, LV_ALIGN_BOTTOM_MID, 0, -30);
+	lv_obj_set_style_bg_color(vol_panel, lv_color_hex(0x181818), 0);
+	lv_obj_set_style_bg_opa(vol_panel, LV_OPA_COVER, 0);
+	lv_obj_set_style_radius(vol_panel, 45, 0);
+	lv_obj_set_style_pad_hor(vol_panel, 32, 0);
+	lv_obj_set_style_pad_column(vol_panel, 24, 0);
+	lv_obj_set_flex_flow(vol_panel, LV_FLEX_FLOW_ROW);
+	lv_obj_set_flex_align(vol_panel, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER,
+			      LV_FLEX_ALIGN_CENTER);
+	lv_obj_set_hidden(vol_panel, true);
+
+	vol_icon = lv_label_create(vol_panel);
+	lv_obj_set_style_text_font(vol_icon, &lv_font_montserrat_28, 0);
+	lv_obj_set_style_text_color(vol_icon, lv_color_hex(0xe8e8e8), 0);
+	lv_obj_set_width(vol_icon, 40);
+	lv_label_set_text(vol_icon, LV_SYMBOL_VOLUME_MAX);
+
+	vol_bar = lv_bar_create(vol_panel);
+	lv_obj_set_flex_grow(vol_bar, 1);
+	lv_obj_set_height(vol_bar, 14);
+	lv_bar_set_range(vol_bar, 0, VOLUME_MAX);
+	lv_obj_set_style_bg_color(vol_bar, lv_color_hex(0x404040), LV_PART_MAIN);
+	lv_obj_set_style_bg_opa(vol_bar, LV_OPA_COVER, LV_PART_MAIN);
+	lv_obj_set_style_bg_color(vol_bar, lv_color_hex(0xe8e8e8), LV_PART_INDICATOR);
+	lv_obj_set_style_radius(vol_bar, 7, LV_PART_MAIN);
+	lv_obj_set_style_radius(vol_bar, 7, LV_PART_INDICATOR);
+
+	vol_hide_timer = lv_timer_create(hide_volume, VOLUME_SHOW_MS, NULL);
+	lv_timer_pause(vol_hide_timer);
+	check_volume(NULL);
+	lv_timer_create(check_volume, 100, NULL);
+}
+
 static lv_obj_t *label(lv_obj_t *parent, const lv_font_t *font, uint32_t color)
 {
 	lv_obj_t *l = lv_label_create(parent);
@@ -607,6 +694,7 @@ int main(int argc, char **argv)
 	lv_obj_set_style_text_color(weather_label, lv_color_hex(0x707070), 0);
 
 	create_forecast_panel(scr, small);
+	create_volume_panel(scr);
 	lv_obj_add_event_cb(scr, on_tap, LV_EVENT_CLICKED, NULL);
 
 	touch_fd = open(TOUCH_DEV, O_RDONLY | O_NONBLOCK);

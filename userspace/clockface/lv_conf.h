@@ -25,6 +25,9 @@
 #define LV_USE_THORVG_INTERNAL	1
 #define LV_USE_LOTTIE		1
 
+/* LVGL's built-in font, for its symbols (the volume bar's speaker) */
+#define LV_FONT_MONTSERRAT_28	1
+
 /* PNG decoding (the "ha" weather icons) */
 #define LV_USE_LODEPNG		1
 

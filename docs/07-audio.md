@@ -72,7 +72,7 @@ written with `i2ctransfer`, 40 writes per call.
 [`clock-volume`](../rootfs-overlay/usr/local/bin/clock-volume) sets the amp's own digital
 volume (`0x4c`) in 21 levels: 20 is 0 dB, each step down is 2.5 dB, 0 is mute. The level is
 saved across reboots (restored by `rcS` after `audio-init`) and published in
-`/run/clock/volume`. `clock-volume up`, `down`, `set N` or `get`.
+`/run/clock/volume`; the clock face shows a volume bar for 2 seconds whenever that changes. `clock-volume up`, `down`, `set N` or `get`.
 
 The buttons aren't input devices on this kernel; Android Things read them as GPIOs (the pins
 are in the stock app's resources: `VolumeUpGpio` GPIO42, `VolumeDownGpio` GPIO576,
