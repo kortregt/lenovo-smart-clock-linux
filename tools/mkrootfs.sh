@@ -57,6 +57,9 @@ done
 # The clock face (userspace/clockface), started from inittab.
 make -s -C "$PROJ/userspace/clockface" LVGL="$BUILD/lvgl" OUT="$BUILD/clockface-out"
 install -m 755 "$BUILD/clockface-out/clockface" rootfs/usr/local/bin/clockface
+# Backlight from the ambient light sensor, also started from inittab.
+aarch64-linux-gnu-gcc -O2 -static -Wall -o rootfs/usr/local/bin/autobright \
+	"$PROJ/userspace/autobright.c" -lm
 
 mkdir -p -m 700 rootfs/root/.ssh
 cp "$SSH_PUBKEY" rootfs/root/.ssh/authorized_keys

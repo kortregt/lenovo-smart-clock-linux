@@ -18,13 +18,13 @@ numbers are `387 + SoC pin` (the SoC GPIO chip's base on this kernel).
 
 | Function | Chip | Connection | Driver status |
 |---|---|---|---|
-| Display panel | ST7701S 480×800 | MIPI DSI, 2 lanes; reset GPIO 66 | Kernel LCM driver; works via DSI test pattern |
+| Display panel | ST7701S 480×800 | MIPI DSI, 2 lanes; reset GPIO 66 | Kernel LCM driver + `/dev/fb0` (patch 0004, [08](08-display.md)) |
 | Backlight | SGM37603A | i2c-2 `0x36`; enable pin 22 (GPIO 409) | Kernel driver, `lcd-backlight` LED |
 | Touch | FocalTech FT6336U | i2c-0 `0x38` | Kernel driver (`mtk-tpd`), not tested |
 | Speaker amp | TI TAS5805M (PBTL) | i2c-2 `0x2c`; I2S 8CH out → `hw:0,0` | No driver; userspace init ([07](07-audio.md)) |
 | Mic ADC | TI TLV320ADC3101 | i2c-1 `0x1b`; enable pin 24 (GPIO 411); TDM RX → `hw:0,1` | No driver; userspace init |
 | Accelerometer | Bosch BMA253 | i2c-0 `0x18` | None |
-| Light/proximity | Lite-On LTR-578 / LTR-390 family | i2c-0 `0x53` | None |
+| Light/proximity | Lite-On LTR-578ALS (`PART_ID` 0xB1) | i2c-0 `0x53` | No driver; read from userspace by `autobright` ([08](08-display.md#automatic-brightness)) |
 | Wi-Fi / BT | MediaTek MT7668 | SDIO `mmc1` (`037a:7668` / `037a:7608`) | Modules + vendor firmware ([06](06-wifi.md)) |
 | Buttons | MT6392 keys | `mtk-pmic-keys` | Kernel driver |
 | RGB LED | — | `/sys/class/leds/{red,green,blue}` | Kernel driver |

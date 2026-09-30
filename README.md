@@ -23,7 +23,8 @@ soldering anything. A USB-A-to-USB-A cable is the only extra hardware.
 | Speaker + microphones | ✅ | Amp and ADC replayed from the stock app; see [07](docs/07-audio.md) |
 | Display | ✅ | Plain `/dev/fb0` (kernel patch 0004); panel mounted sideways; see [08](docs/08-display.md) |
 | Clock face | ✅ | LVGL: time, date, weather; see [08](docs/08-display.md#the-clock-face) |
-| Touchscreen, buttons, light sensor, accelerometer | ⏳ | Drivers load; not wired into anything yet |
+| Automatic brightness | ✅ | Light sensor → backlight, smooth fades; see [08](docs/08-display.md#automatic-brightness) |
+| Touchscreen, buttons, accelerometer | ⏳ | Drivers load; not wired into anything yet |
 | Bluetooth | ⏳ | Module built, untested |
 | Home Assistant | 🟡 | Weather from Home Assistant on the clock face; see [09](docs/09-home-assistant.md) |
 
@@ -40,7 +41,8 @@ A reference of every chip, bus address, GPIO and partition found along the way i
                   ├─ Wi-Fi (MT7668 module + vendor firmware), SSH (dropbear)
                   ├─ audio-init: TAS5805M amp + TLV320ADC3101 mics over I2C
                   ├─ clockface: LVGL clock on /dev/fb0
-                  └─ ha-poll: weather from Home Assistant for the clock face
+                  ├─ ha-poll: weather from Home Assistant for the clock face
+                  └─ autobright: backlight from the light sensor
  slot A: untouched stock Android Things    -> `fastboot set_active a` to go back
 ```
 
@@ -52,7 +54,7 @@ A reference of every chip, bus address, GPIO and partition found along the way i
 | [kernel/patches/](kernel/patches/) | Our changes to Google's kernel source |
 | [kernel/smartclock.config](kernel/smartclock.config) | Config options changed from stock |
 | [initramfs/](initramfs/) | The initramfs `/init` (and a tiny reboot probe used for debugging) |
-| [userspace/](userspace/) | Programs for the clock: the LVGL clock face, a framebuffer test |
+| [userspace/](userspace/) | Programs for the clock: the LVGL clock face, automatic brightness, a framebuffer test |
 | [rootfs-overlay/](rootfs-overlay/) | Files layered onto Alpine: boot script, audio setup, inittab |
 | [tools/](tools/) | Build and helper scripts (boot image repack, initramfs, rootfs, diagnostics) |
 | [at_auth_unlock.py](at_auth_unlock.py) | AOSP's Android Things AVB unlock tool, fixed for Python 3 |

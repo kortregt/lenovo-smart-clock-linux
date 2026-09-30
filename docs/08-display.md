@@ -43,6 +43,27 @@ git clone -b v9.6.0 --depth 1 https://github.com/lvgl/lvgl ~/build/lvgl
 make -C userspace/clockface LVGL=~/build/lvgl OUT=~/build/clockface-out
 ```
 
+## Automatic brightness
+
+[`userspace/autobright.c`](../userspace/autobright.c) (started from `/etc/inittab`) sets
+the backlight from the ambient light sensor, a Lite-On **LTR-578ALS** on i2c-0 at `0x53`
+(`PART_ID` register `0x06` reads `0xB1`). It has no kernel driver, so it's read through
+`/dev/i2c-0`:
+
+| Register | Value | Meaning |
+|---|---|---|
+| `0x00` MAIN_CTRL | `0x02` | light sensor on (it's off at power-up) |
+| `0x04` ALS_MEAS_RATE | `0x05` | 20-bit, 400 ms per measurement, one every 500 ms |
+| `0x05` ALS_GAIN | `0x04` | 18× (the most sensitive: the sensor sits behind dark glass) |
+| `0x0D`–`0x0F` ALS_DATA | | 20-bit reading, little-endian |
+
+With those settings a dark room reads under 5, a room in daylight a few hundred, and a
+phone flashlight about 20,000. Readings are smoothed and mapped through a curve to a
+backlight level (1–255), and the backlight fades towards it about 30 times a second on a
+log scale, so the change looks even at every brightness. The curve is in
+[`/etc/clock/autobright.conf`](../rootfs-overlay/etc/clock/autobright.conf):
+`CURVE="3:4 30:24 300:140 3000:255"` (reading:level points).
+
 ## Why `/dev/fb0` was black (the bug patch 0004 fixes)
 
 With no framebuffer handed over by the bootloader, the driver (`mtkfb`, in its
