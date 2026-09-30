@@ -1,0 +1,78 @@
+# Home Assistant package for the Smart Clock's alarms (read by clock-alarm on the clock).
+#
+# Put this file in <config>/packages/ and enable packages in configuration.yaml:
+#
+#   homeassistant:
+#     packages: !include_dir_named packages
+#
+# then restart Home Assistant. The helpers show up under Settings -> Devices & services ->
+# Helpers; their values can be changed from dashboards and automations (and by the clock).
+# The clock also fires `smart_clock_alarm` events (data: state = ringing / snoozed /
+# stopped, alarm = 1-3), for automations such as fading the lights up.
+
+input_boolean:
+  smart_clock_alarm_1:
+    name: Smart Clock alarm 1
+    icon: mdi:alarm
+  smart_clock_alarm_2:
+    name: Smart Clock alarm 2
+    icon: mdi:alarm
+  smart_clock_alarm_3:
+    name: Smart Clock alarm 3
+    icon: mdi:alarm
+
+input_datetime:
+  smart_clock_alarm_1_time:
+    name: Smart Clock alarm 1 time
+    has_date: false
+    has_time: true
+  smart_clock_alarm_2_time:
+    name: Smart Clock alarm 2 time
+    has_date: false
+    has_time: true
+  smart_clock_alarm_3_time:
+    name: Smart Clock alarm 3 time
+    has_date: false
+    has_time: true
+
+input_select:
+  smart_clock_alarm_1_days: &days
+    name: Smart Clock alarm 1 days
+    icon: mdi:calendar-week
+    options:
+      - Every day
+      - Weekdays
+      - Weekends
+      - Once
+  smart_clock_alarm_2_days:
+    <<: *days
+    name: Smart Clock alarm 2 days
+  smart_clock_alarm_3_days:
+    <<: *days
+    name: Smart Clock alarm 3 days
+  smart_clock_alarm_media_type:
+    name: Smart Clock alarm music type
+    icon: mdi:playlist-music
+    options:
+      - playlist
+      - radio
+      - album
+      - artist
+      - track
+
+input_text:
+  # A Music Assistant item: a name ("Morning") or a URI (library://playlist/12,
+  # spotify://playlist/...). Empty = the built-in chime.
+  smart_clock_alarm_media:
+    name: Smart Clock alarm music
+    icon: mdi:music
+    max: 255
+
+input_number:
+  smart_clock_alarm_volume:
+    name: Smart Clock alarm volume
+    icon: mdi:volume-high
+    min: 5
+    max: 100
+    step: 5
+    mode: slider

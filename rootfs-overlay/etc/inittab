@@ -9,6 +9,8 @@ ttyGS0::respawn:/sbin/getty -n -l /usr/local/bin/autologin 0 ttyGS0 vt100
 ::respawn:/usr/local/bin/ha-poll
 # Now playing on the clock face (needs HA_PLAYER in ha.conf).
 ::respawn:/usr/local/bin/ha-media
+# Alarms (set in Home Assistant helpers; see homeassistant/smart_clock.yaml).
+::respawn:/usr/local/bin/clock-alarm
 # Backlight from the ambient light sensor.
 ::respawn:/usr/local/bin/autobright
 # Buttons and mic switch (actions in /etc/clock/keys.conf).

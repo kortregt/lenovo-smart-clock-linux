@@ -21,6 +21,9 @@
  * While music plays behind the clock, a pill at the bottom shows the track; tapping it
  * brings the now-playing view back.
  *
+ * Alarms (clock-alarm): the next one shows by a bell at the top right; while one rings, a
+ * full-screen Snooze / Stop view covers everything; while snoozed, tapping the bell stops it.
+ *
  * When /run/clock/volume changes (clock-volume, from the buttons or elsewhere), a volume bar
  * shows for 2 seconds.
  *
@@ -64,6 +67,9 @@
 #define MEDIA_FILE	"/run/clock/media"
 #define MEDIA_CTL	"/usr/local/bin/ha-media"
 #define MEDIA_LINGER_S	30
+#define ALARM_FILE	"/run/clock/alarm"
+#define ALARM_NEXT_FILE	"/run/clock/alarm-next"
+#define ALARM_CTL	"/usr/local/bin/clock-alarm"
 #define VOLUME_FILE	"/run/clock/volume"
 #define VOLUME_MAX	100
 #define VOLUME_SHOW_MS	2000
@@ -76,7 +82,7 @@ static enum { STYLE_METEOCONS, STYLE_HA } icon_style = STYLE_HA;
 static enum { ANIM_ALWAYS, ANIM_MINUTE, ANIM_STILL } icon_animation = ANIM_MINUTE;
 static bool icon_playing;
 static bool time_12h;
-static lv_obj_t *np_time;
+static lv_obj_t *np_time, *alarm_time;
 static void play_icon_once(void);
 
 static int fb_fd;
@@ -89,6 +95,7 @@ static lv_obj_t *forecast_panel, *fc_day[FORECAST_DAYS];
 static lv_obj_t *fc_high[FORECAST_DAYS], *fc_low[FORECAST_DAYS];
 static lv_timer_t *forecast_timer;
 static lv_obj_t *vol_panel, *vol_icon, *vol_bar;
+static char alarm_state[64];	/* clock-alarm's state: idle, ringing, snoozed */
 static lv_timer_t *vol_hide_timer;
 
 static int touch_fd = -1;
@@ -254,6 +261,8 @@ static void update_time(lv_timer_t *t)
 		lv_label_set_text(time_label, buf);
 		if (np_time)
 			lv_label_set_text(np_time, buf);
+		if (alarm_time)
+			lv_label_set_text(alarm_time, buf);
 		strftime(buf, sizeof(buf), "%A %e %B", &tm);
 		lv_label_set_text(date_label, buf);
 		if (icon_animation == ANIM_MINUTE)
@@ -506,7 +515,8 @@ static void check_volume(lv_timer_t *t)
 			level = -1;
 		fclose(f);
 	}
-	if (level < 0)
+	/* while an alarm rings, its fade-up would cover the Snooze / Stop buttons */
+	if (level < 0 || !strcmp(alarm_state, "ringing"))
 		return;
 	lv_bar_set_value(vol_bar, level, LV_ANIM_OFF);
 	lv_label_set_text(vol_icon, level == 0 ? LV_SYMBOL_MUTE :
@@ -1068,6 +1078,200 @@ static void create_now_playing(lv_obj_t *scr, const lv_font_t *title_font,
 	lv_timer_create(update_media, 500, NULL);
 }
 
+/* ---- alarms --------------------------------------------------------------------------- */
+
+static lv_obj_t *alarm_panel, *alarm_bell, *alarm_bell_text;
+
+static void alarm_command(const char *cmd)
+{
+	if (fork() == 0) {
+		execl(ALARM_CTL, ALARM_CTL, cmd, (char *)NULL);
+		_exit(127);
+	}
+}
+
+static void on_alarm_button(lv_event_t *e)
+{
+	alarm_command(lv_event_get_user_data(e));
+	lv_obj_set_hidden(alarm_panel, true);	/* clock-alarm confirms through ALARM_FILE */
+}
+
+static void on_bell_tap(lv_event_t *e)
+{
+	(void)e;
+	if (!strcmp(alarm_state, "snoozed"))
+		alarm_command("stop");
+}
+
+/* "HH:MM" (24 h) in the clock face's format */
+static void fmt_hm(char *out, size_t len, const char *hm)
+{
+	int h, m;
+
+	if (sscanf(hm, "%d:%d", &h, &m) != 2) {
+		snprintf(out, len, "%s", hm);
+		return;
+	}
+	if (time_12h)
+		snprintf(out, len, "%d:%02d", h % 12 ? h % 12 : 12, m);
+	else
+		snprintf(out, len, "%02d:%02d", h, m);
+}
+
+static bool file_changed(const char *path, struct timespec *last)
+{
+	struct stat st;
+
+	if (stat(path, &st))
+		return false;
+	if (st.st_mtim.tv_sec == last->tv_sec && st.st_mtim.tv_nsec == last->tv_nsec)
+		return false;
+	*last = st.st_mtim;
+	return true;
+}
+
+static void update_alarm(lv_timer_t *t)
+{
+	static struct timespec last_state, last_next;
+	static char next[32];
+	static long snooze_until;
+	bool changed = false;
+	char line[64], text[128], hm[16];
+	FILE *f;
+
+	(void)t;
+	if (file_changed(ALARM_FILE, &last_state) && (f = fopen(ALARM_FILE, "r"))) {
+		alarm_state[0] = 0;
+		snooze_until = 0;
+		while (fgets(line, sizeof(line), f)) {
+			line[strcspn(line, "\n")] = 0;
+			if (!strncmp(line, "state=", 6))
+				snprintf(alarm_state, sizeof(alarm_state), "%s", line + 6);
+			else if (!strncmp(line, "snooze_until=", 13))
+				snooze_until = atol(line + 13);
+		}
+		fclose(f);
+		changed = true;
+	}
+	if (file_changed(ALARM_NEXT_FILE, &last_next) && (f = fopen(ALARM_NEXT_FILE, "r"))) {
+		if (!fgets(next, sizeof(next), f))
+			next[0] = 0;
+		next[strcspn(next, "\n")] = 0;
+		fclose(f);
+		changed = true;
+	}
+	if (!changed)
+		return;
+
+	/* ringing: the full-screen view, above everything */
+	if (!strcmp(alarm_state, "ringing")) {
+		lv_obj_set_hidden(vol_panel, true);
+		lv_obj_set_hidden(alarm_panel, false);
+		lv_obj_move_foreground(alarm_panel);
+	} else {
+		lv_obj_set_hidden(alarm_panel, true);
+	}
+
+	/* the bell: snoozed until ..., or the next alarm ("Tue 07:00") */
+	text[0] = 0;
+	if (!strcmp(alarm_state, "snoozed") && snooze_until) {
+		time_t u = snooze_until;
+		struct tm tm;
+
+		localtime_r(&u, &tm);
+		strftime(hm, sizeof(hm), "%H:%M", &tm);
+		fmt_hm(line, sizeof(line), hm);
+		snprintf(text, sizeof(text), "Snoozed  ·  %s", line);
+	} else if (*next) {
+		char day[8] = "";
+
+		if (sscanf(next, "%7s %15s", day, hm) == 2) {
+			fmt_hm(line, sizeof(line), hm);
+			snprintf(text, sizeof(text), "%s %s", day, line);
+		}
+	}
+	set_text_if(alarm_bell_text, text);
+	lv_obj_set_hidden(alarm_bell, !*text);
+}
+
+static lv_obj_t *alarm_button(lv_obj_t *parent, const char *text, const char *cmd, int w,
+			      uint32_t bg, const lv_font_t *font)
+{
+	lv_obj_t *b = lv_obj_create(parent), *l;
+
+	lv_obj_remove_style_all(b);
+	lv_obj_set_size(b, w, 110);
+	lv_obj_set_clickable(b, true);
+	lv_obj_set_style_radius(b, 55, 0);
+	lv_obj_set_style_bg_color(b, lv_color_hex(bg), 0);
+	lv_obj_set_style_bg_opa(b, LV_OPA_COVER, 0);
+	lv_obj_set_style_bg_color(b, lv_color_hex(0x505050), LV_STATE_PRESSED);
+	lv_obj_add_event_cb(b, on_alarm_button, LV_EVENT_CLICKED, (void *)cmd);
+	l = lv_label_create(b);
+	lv_label_set_text(l, text);
+	lv_obj_set_style_text_font(l, font, 0);
+	lv_obj_set_style_text_color(l, lv_color_hex(0xf0f0f0), 0);
+	lv_obj_center(l);
+	return b;
+}
+
+static void create_alarm_views(lv_obj_t *scr, const lv_font_t *big, const lv_font_t *medium,
+			       const lv_font_t *small)
+{
+	lv_obj_t *row, *l;
+
+	/* the bell, top right of the clock face */
+	alarm_bell = lv_obj_create(scr);
+	lv_obj_remove_style_all(alarm_bell);
+	lv_obj_set_size(alarm_bell, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
+	lv_obj_align(alarm_bell, LV_ALIGN_TOP_RIGHT, -24, 16);
+	lv_obj_set_style_pad_all(alarm_bell, 8, 0);
+	lv_obj_set_style_pad_column(alarm_bell, 10, 0);
+	lv_obj_set_flex_flow(alarm_bell, LV_FLEX_FLOW_ROW);
+	lv_obj_set_flex_align(alarm_bell, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER,
+			      LV_FLEX_ALIGN_CENTER);
+	lv_obj_set_clickable(alarm_bell, true);
+	lv_obj_add_event_cb(alarm_bell, on_bell_tap, LV_EVENT_CLICKED, NULL);
+	lv_obj_set_hidden(alarm_bell, true);
+	l = lv_label_create(alarm_bell);
+	lv_label_set_text(l, LV_SYMBOL_BELL);
+	lv_obj_set_style_text_font(l, &lv_font_montserrat_28, 0);
+	lv_obj_set_style_text_color(l, lv_color_hex(0x707070), 0);
+	alarm_bell_text = lv_label_create(alarm_bell);
+	lv_label_set_text(alarm_bell_text, "");
+	lv_obj_set_style_text_font(alarm_bell_text, small, 0);
+	lv_obj_set_style_text_color(alarm_bell_text, lv_color_hex(0x707070), 0);
+
+	/* ringing */
+	alarm_panel = lv_obj_create(scr);
+	lv_obj_remove_style_all(alarm_panel);
+	lv_obj_set_size(alarm_panel, SCREEN_W, SCREEN_H);
+	lv_obj_set_style_bg_color(alarm_panel, lv_color_black(), 0);
+	lv_obj_set_style_bg_opa(alarm_panel, LV_OPA_COVER, 0);
+	lv_obj_set_clickable(alarm_panel, true);
+	lv_obj_set_hidden(alarm_panel, true);
+
+	alarm_time = lv_label_create(alarm_panel);
+	lv_label_set_text(alarm_time, "");
+	lv_obj_set_style_text_font(alarm_time, big, 0);
+	lv_obj_set_style_text_color(alarm_time, lv_color_hex(0xf0f0f0), 0);
+	lv_obj_align(alarm_time, LV_ALIGN_TOP_MID, 0, -10);
+
+	row = lv_obj_create(alarm_panel);
+	lv_obj_remove_style_all(row);
+	lv_obj_set_size(row, SCREEN_W - 80, LV_SIZE_CONTENT);
+	lv_obj_align(row, LV_ALIGN_BOTTOM_MID, 0, -40);
+	lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW);
+	lv_obj_set_flex_align(row, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_CENTER,
+			      LV_FLEX_ALIGN_CENTER);
+	lv_obj_set_clickable(row, false);
+	alarm_button(row, "Snooze", "snooze", 440, 0x2a2a2a, medium);
+	alarm_button(row, "Stop", "stop", 220, 0x2a2a2a, medium);
+
+	update_alarm(NULL);
+	lv_timer_create(update_alarm, 500, NULL);
+}
+
 int main(int argc, char **argv)
 {
 	static uint32_t draw_buf[2][SCREEN_W * DRAW_LINES];
@@ -1159,6 +1363,7 @@ int main(int argc, char **argv)
 	create_forecast_panel(scr, small);
 	create_now_playing(scr, medium, small, tiny);
 	create_volume_panel(scr);
+	create_alarm_views(scr, big, medium, small);
 	lv_obj_add_event_cb(scr, on_tap, LV_EVENT_CLICKED, NULL);
 
 	touch_fd = open(TOUCH_DEV, O_RDONLY | O_NONBLOCK);
