@@ -5,12 +5,16 @@
  * the 480x800 framebuffer (the panel is mounted sideways) and pans after the last area of a
  * frame, because the display only composes a new frame on a pan (docs/08-display.md).
  *
+ * Under the date it shows one line of text from /run/clock/weather (written by ha-poll
+ * from Home Assistant), hidden when that file is missing or older than 15 minutes.
+ *
  *   clockface [-f font.ttf]
  */
 #include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <sys/ioctl.h>
 #include <sys/mman.h>
 #include <time.h>
@@ -23,6 +27,9 @@
 #define SCREEN_H	480
 #define DRAW_LINES	60
 
+#define WEATHER_FILE	"/run/clock/weather"
+#define WEATHER_MAX_AGE	(15 * 60)
+
 static const char *font_path = "/usr/share/fonts/inter/InterVariable.ttf";
 
 static int fb_fd;
@@ -30,7 +37,7 @@ static struct fb_var_screeninfo var;
 static struct fb_fix_screeninfo fix;
 static unsigned char *fb;
 
-static lv_obj_t *time_label, *date_label;
+static lv_obj_t *time_label, *date_label, *weather_label;
 
 static uint32_t tick_ms(void)
 {
@@ -106,11 +113,28 @@ static void update_time(lv_timer_t *t)
 	}
 }
 
+static void update_weather(lv_timer_t *t)
+{
+	char buf[96] = "";
+	struct stat st;
+	FILE *f;
+
+	(void)t;
+	if (stat(WEATHER_FILE, &st) == 0 && time(NULL) - st.st_mtime < WEATHER_MAX_AGE &&
+	    (f = fopen(WEATHER_FILE, "r"))) {
+		if (fgets(buf, sizeof(buf), f))
+			buf[strcspn(buf, "\n")] = 0;
+		fclose(f);
+	}
+	if (strcmp(buf, lv_label_get_text(weather_label)))
+		lv_label_set_text(weather_label, buf);
+}
+
 int main(int argc, char **argv)
 {
 	static uint32_t draw_buf[2][SCREEN_W * DRAW_LINES];
 	lv_display_t *disp;
-	lv_font_t *big, *small;
+	lv_font_t *big, *medium, *small;
 	lv_obj_t *scr;
 	void *ttf;
 	size_t ttf_len = 0;
@@ -155,7 +179,8 @@ int main(int argc, char **argv)
 	lv_display_set_flush_cb(disp, flush_cb);
 
 	big = lv_tiny_ttf_create_data(ttf, ttf_len, 240);
-	small = lv_tiny_ttf_create_data(ttf, ttf_len, 44);
+	medium = lv_tiny_ttf_create_data(ttf, ttf_len, 44);
+	small = lv_tiny_ttf_create_data(ttf, ttf_len, 36);
 
 	scr = lv_screen_active();
 	lv_obj_set_style_bg_color(scr, lv_color_black(), 0);
@@ -164,15 +189,23 @@ int main(int argc, char **argv)
 	time_label = lv_label_create(scr);
 	lv_obj_set_style_text_font(time_label, big, 0);
 	lv_obj_set_style_text_color(time_label, lv_color_hex(0xe8e8e8), 0);
-	lv_obj_align(time_label, LV_ALIGN_CENTER, 0, -40);
+	lv_obj_align(time_label, LV_ALIGN_CENTER, 0, -60);
 
 	date_label = lv_label_create(scr);
-	lv_obj_set_style_text_font(date_label, small, 0);
-	lv_obj_set_style_text_color(date_label, lv_color_hex(0x808080), 0);
-	lv_obj_align(date_label, LV_ALIGN_CENTER, 0, 130);
+	lv_obj_set_style_text_font(date_label, medium, 0);
+	lv_obj_set_style_text_color(date_label, lv_color_hex(0x909090), 0);
+	lv_obj_align(date_label, LV_ALIGN_CENTER, 0, 100);
+
+	weather_label = lv_label_create(scr);
+	lv_label_set_text(weather_label, "");
+	lv_obj_set_style_text_font(weather_label, small, 0);
+	lv_obj_set_style_text_color(weather_label, lv_color_hex(0x606060), 0);
+	lv_obj_align(weather_label, LV_ALIGN_CENTER, 0, 160);
 
 	update_time(NULL);
 	lv_timer_create(update_time, 1000, NULL);
+	update_weather(NULL);
+	lv_timer_create(update_weather, 5000, NULL);
 
 	for (;;) {
 		uint32_t idle = lv_timer_handler();

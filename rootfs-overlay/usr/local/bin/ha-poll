@@ -1,0 +1,28 @@
+#!/bin/sh
+# Poll Home Assistant for the clock face. Settings (URL, token, entities) are in
+# /etc/clock/ha.conf; see ha.conf.example. Writes /run/clock/weather, one line of text,
+# which clockface shows under the date.
+CONF=/etc/clock/ha.conf
+OUT=/run/clock/weather
+INTERVAL=60
+
+[ -r "$CONF" ] || { echo "ha-poll: no $CONF" >&2; sleep 3600; exit 1; }
+. "$CONF"
+: "${HA_URL:?}" "${HA_TOKEN:?}" "${HA_WEATHER:=weather.forecast_home}"
+mkdir -p /run/clock
+
+while :; do
+	if json=$(wget -q -T 10 -O - --header "Authorization: Bearer $HA_TOKEN" \
+			"$HA_URL/api/states/$HA_WEATHER"); then
+		line=$(printf '%s' "$json" | jq -r '
+			{ "clear-night": "Clear", "cloudy": "Cloudy", "exceptional": "Severe weather",
+			  "fog": "Fog", "hail": "Hail", "lightning": "Thunderstorms",
+			  "lightning-rainy": "Thunderstorms", "partlycloudy": "Partly cloudy",
+			  "pouring": "Heavy rain", "rainy": "Rain", "snowy": "Snow",
+			  "snowy-rainy": "Sleet", "sunny": "Sunny", "windy": "Windy",
+			  "windy-variant": "Windy" } as $names
+			| "\(.attributes.temperature | round)\(.attributes.temperature_unit)  \($names[.state] // .state)"')
+		[ -n "$line" ] && printf '%s\n' "$line" > "$OUT.tmp" && mv "$OUT.tmp" "$OUT"
+	fi
+	sleep "$INTERVAL"
+done

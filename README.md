@@ -22,10 +22,10 @@ soldering anything. A USB-A-to-USB-A cable is the only extra hardware.
 | Wi-Fi (MT7668) | ✅ | Vendor module + firmware; see [06](docs/06-wifi.md) |
 | Speaker + microphones | ✅ | Amp and ADC replayed from the stock app; see [07](docs/07-audio.md) |
 | Display | ✅ | Plain `/dev/fb0` (kernel patch 0004); panel mounted sideways; see [08](docs/08-display.md) |
-| Clock face | ✅ | LVGL, time and date; see [08](docs/08-display.md#the-clock-face) |
+| Clock face | ✅ | LVGL: time, date, weather; see [08](docs/08-display.md#the-clock-face) |
 | Touchscreen, buttons, light sensor, accelerometer | ⏳ | Drivers load; not wired into anything yet |
 | Bluetooth | ⏳ | Module built, untested |
-| Home Assistant integration | ⏳ | The goal: Home Assistant data on the clock face next |
+| Home Assistant | 🟡 | Weather from Home Assistant on the clock face; see [09](docs/09-home-assistant.md) |
 
 A reference of every chip, bus address, GPIO and partition found along the way is in
 [docs/hardware.md](docs/hardware.md).
@@ -39,7 +39,8 @@ A reference of every chip, bus address, GPIO and partition found along the way i
              └─ system_b: Alpine Linux 3.24 (busybox init)
                   ├─ Wi-Fi (MT7668 module + vendor firmware), SSH (dropbear)
                   ├─ audio-init: TAS5805M amp + TLV320ADC3101 mics over I2C
-                  └─ clockface: LVGL clock on /dev/fb0
+                  ├─ clockface: LVGL clock on /dev/fb0
+                  └─ ha-poll: weather from Home Assistant for the clock face
  slot A: untouched stock Android Things    -> `fastboot set_active a` to go back
 ```
 

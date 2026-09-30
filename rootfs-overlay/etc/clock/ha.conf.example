@@ -1,0 +1,5 @@
+# Home Assistant settings for ha-poll. Copy to /etc/clock/ha.conf and chmod 600.
+# The token: Home Assistant -> your profile -> Security -> Long-lived access tokens.
+HA_URL=http://homeassistant.local:8123
+HA_TOKEN=
+HA_WEATHER=weather.forecast_home
