@@ -62,19 +62,11 @@ fastboot oem at-unlock-vboot           # -> avb-locked: 0
 then clears the factory partition's persistent digest (otherwise later changes to
 `factory` would be rejected once AVB is relocked).
 
-### The Python 3 crash
+This repo's copy differs from AOSP's in one line: the original crashes on Python 3 in that
+last step (`TypeError: a bytes-like object is required, not 'str'`).
 
-The stock script crashes in that final step with
-`TypeError: a bytes-like object is required, not 'str'` (it writes a `str` into a binary
-file). The unlock itself has already succeeded at that point. The fixed script encodes the
-name; if you hit it with the original, run just the last step:
-
-```sh
-uv run --no-project --with pycryptodome python -c "import at_auth_unlock as a; a.ClearFactoryPersistentDigest(verbose=True)"
-```
-
-Re-running the whole script after a successful unlock fails with
-`only allow when locked`, because there's no challenge to issue any more; that's expected.
+Running the script again on an already-unlocked clock fails with `only allow when locked`:
+there's no challenge to issue any more. That's expected, not an error.
 
 ## Things that don't work
 
