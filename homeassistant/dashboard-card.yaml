@@ -43,9 +43,21 @@ cards:
   - type: entities
     title: Alarm sound
     entities:
-      - entity: input_text.smart_clock_alarm_media
-        name: Music (empty = chime)
-      - entity: input_select.smart_clock_alarm_media_type
-        name: Music type
+      - entity: input_select.smart_clock_alarm_sound
+        name: Sound
+      - type: conditional
+        conditions:
+          - entity: input_select.smart_clock_alarm_sound
+            state: Music
+        row:
+          entity: input_text.smart_clock_alarm_media
+          name: Music (a playlist, station, ... in Music Assistant)
+      - type: conditional
+        conditions:
+          - entity: input_select.smart_clock_alarm_sound
+            state: Music
+        row:
+          entity: input_select.smart_clock_alarm_media_type
+          name: Music type
       - entity: input_number.smart_clock_alarm_volume
         name: Volume

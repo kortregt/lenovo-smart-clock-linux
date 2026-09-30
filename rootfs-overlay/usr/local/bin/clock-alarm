@@ -1,8 +1,9 @@
 #!/bin/sh
 # Alarms. They're set in Home Assistant helpers (homeassistant/smart_clock.yaml): alarm N
 # (1-3) is input_boolean.smart_clock_alarm_N (on/off), input_datetime..._N_time and
-# input_select..._N_days (Every day, Weekdays, Weekends, Once), plus the music
-# (input_text.smart_clock_alarm_media, input_select..._media_type) and volume
+# input_select..._N_days (Every day, Weekdays, Weekends, Once), plus the sound
+# (input_select.smart_clock_alarm_sound: Chime, Soft bells, Beeps or Music), the music
+# (input_text.smart_clock_alarm_media, input_select..._media_type) and the volume
 # (input_number.smart_clock_alarm_volume). A copy is kept in /var/lib/clock/alarms, so
 # alarms still ring when Home Assistant or the network is down.
 #
@@ -12,8 +13,9 @@
 #   clock-alarm ring [N]     ring now, to try it out
 #
 # Ringing pauses anything already playing (it stays paused afterwards), then plays the
-# music through Music Assistant, starting quiet and fading up to the alarm volume over a
-# minute; without music (or if it doesn't start) a chime plays on the speaker directly. Snooze is 9 minutes; ringing stops by itself after 30. The volume is put
+# sound, starting quiet and fading up to the alarm volume over a minute: a built-in sound
+# straight to the speaker, or the music through Music Assistant (the Chime if it doesn't
+# start). Snooze is 9 minutes; ringing stops by itself after 30. The volume is put
 # back afterwards. Home Assistant gets smart_clock_alarm events (state: ringing, snoozed,
 # stopped). State for the clock face: /run/clock/alarm (state, alarm, snooze_until) and
 # /run/clock/alarm-next (the next alarm: "day HH:MM", or empty).
@@ -23,7 +25,7 @@ STATE=/run/clock/alarm
 NEXT=/run/clock/alarm-next
 RINGER=/run/clock/alarm.ringer		# pid of the ringing process
 STARTED_MUSIC=/run/clock/alarm.music	# exists while the alarm's own music plays
-CHIME=/usr/local/share/clock/chime.wav
+SOUNDS=/usr/local/share/clock/sounds	# chime.wav, soft-bells.wav, beeps.wav
 N_ALARMS=3
 SNOOZE_S=540
 RING_MAX_S=1800
@@ -69,6 +71,7 @@ sync() {
 		(map({key: .entity_id, value: .state}) | from_entries) as $s
 		| (range(1; $n + 1) as $i
 		   | "alarm\($i)=\($s["input_boolean.smart_clock_alarm_\($i)"] // "off") \($s["input_datetime.smart_clock_alarm_\($i)_time"] // "00:00:00" | .[0:5]) \($s["input_select.smart_clock_alarm_\($i)_days"] // "Every day" | gsub(" "; "_"))"),
+		  "sound=\($s["input_select.smart_clock_alarm_sound"] // "Chime")",
 		  "media=\($s["input_text.smart_clock_alarm_media"] // "" | if . == "unknown" then "" else . end)",
 		  "media_type=\($s["input_select.smart_clock_alarm_media_type"] // "playlist")",
 		  "volume=\($s["input_number.smart_clock_alarm_volume"] // "50" | tonumber? // 50 | floor)"
@@ -111,7 +114,14 @@ write_next() {
 ring() {	# alarm
 	alarm=$1
 	[ -r $CACHE ] || sync
+	sound=$(cfg sound)
 	media=$(cfg media)
+	[ "$sound" = Music ] || media=		# a built-in sound: no music
+	case "$sound" in
+	"Soft bells") wav=$SOUNDS/soft-bells.wav ;;
+	Beeps) wav=$SOUNDS/beeps.wav ;;
+	*) wav=$SOUNDS/chime.wav ;;		# Chime, and Music's fallback
+	esac
 	target=$(cfg volume)
 	case "$target" in ''|*[!0-9]*) target=50 ;; esac
 	/usr/local/bin/clock-volume get > /run/clock/alarm.volume	# restored afterwards
@@ -147,11 +157,11 @@ ring() {	# alarm
 			done
 			while :; do sleep 60; done
 		fi
-		# the chime, straight to the speaker, fading up the same way
+		# a built-in sound, straight to the speaker, fading up the same way
 		v=$START_VOLUME
 		while :; do
 			/usr/local/bin/clock-volume player $v >/dev/null
-			aplay -q "$CHIME"
+			aplay -q "$wav"
 			[ $v -lt $target ] && v=$((v + 5)) && [ $v -gt $target ] && v=$target
 		done
 	) </dev/null >/dev/null 2>&1 &

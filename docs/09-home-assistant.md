@@ -116,21 +116,23 @@ Three alarms, set in Home Assistant helpers from the package
 [`homeassistant/smart_clock.yaml`](../homeassistant/smart_clock.yaml) (put it in
 `<config>/packages/` and add `packages: !include_dir_named packages` under `homeassistant:`
 in `configuration.yaml`): for each alarm an on/off switch, a time and its days (Every day,
-Weekdays, Weekends, or Once, which switches itself off after ringing), plus the alarm music
-(a Music Assistant name or URI, and its type) and volume. They're dashboard controls and can
+Weekdays, Weekends, or Once, which switches itself off after ringing), plus the alarm sound
+(Chime, Soft bells, Beeps, or Music: a Music Assistant name or URI and its type) and volume. They're dashboard controls and can
 be used in automations. The package also has a `sensor.smart_clock_next_alarm` (a timestamp,
 so dashboards show "in 9 hours"), and
 [`homeassistant/dashboard-card.yaml`](../homeassistant/dashboard-card.yaml) is a card that
-lays the alarms out side by side (Edit dashboard → Add card → Manual).
+lays the alarms out side by side (Edit dashboard → Add card → Manual), showing the music
+fields only when the sound is Music; [`dashboard.yaml`](../homeassistant/dashboard.yaml) is
+a whole dashboard with it (Raw configuration editor).
 
 [`clock-alarm`](../rootfs-overlay/usr/local/bin/clock-alarm) (from `/etc/inittab`) reads the
 helpers every minute and keeps a copy on the clock, so alarms ring even when Home Assistant
 or the network is down. When one rings it:
 
 - pauses anything playing (a pause keeps a Spotify Connect session; it stays paused),
-- plays the alarm music through Music Assistant, from quiet up to the alarm volume over a
-  minute, or, without music or if it doesn't start within 10 s, a chime straight to the
-  speaker (`/usr/local/share/clock/chime.wav`), fading up the same way,
+- plays the sound, from quiet up to the alarm volume over a minute: a built-in sound
+  straight to the speaker (`/usr/local/share/clock/sounds/`), or the music through Music
+  Assistant (the Chime if it doesn't start within 10 s),
 - shows a Snooze / Stop screen; any button press snoozes (9 minutes), holding both stops,
 - stops by itself after 30 minutes, stops only music it started, and puts the volume back,
 - fires `smart_clock_alarm` events (`state`: ringing / snoozed / stopped; `alarm`: 1-3) for

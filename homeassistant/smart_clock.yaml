@@ -50,6 +50,15 @@ input_select:
   smart_clock_alarm_3_days:
     <<: *days
     name: Smart Clock alarm 3 days
+  # What the alarm plays: a built-in sound, or Music (the music settings below)
+  smart_clock_alarm_sound:
+    name: Smart Clock alarm sound
+    icon: mdi:bell-ring
+    options:
+      - Chime
+      - Soft bells
+      - Beeps
+      - Music
   smart_clock_alarm_media_type:
     name: Smart Clock alarm music type
     icon: mdi:playlist-music
@@ -61,8 +70,8 @@ input_select:
       - track
 
 input_text:
-  # A Music Assistant item: a name ("Morning") or a URI (library://playlist/12,
-  # spotify://playlist/...). Empty = the built-in chime.
+  # With the sound set to Music: a Music Assistant item, a name ("Morning") or a URI
+  # (library://playlist/12, spotify://playlist/...). If it doesn't play, the Chime does.
   smart_clock_alarm_media:
     name: Smart Clock alarm music
     icon: mdi:music
