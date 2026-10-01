@@ -40,13 +40,16 @@ makes it a loudspeaker, always discoverable and pairable. About 15 MB of RAM, no
 - **The speaker freeze.** When a phone's Bluetooth audio first starts after boot, the
   speaker's playback pointer stops moving while ALSA still reports the stream running, and
   every client of the shared `dmix` blocks. Caught with a boot-time logger: it happens the
-  moment `bluealsa-aplay` opens the speaker; a second 44.1 or 48 kHz client, a clock step or
-  an HCI reset don't cause it, and a fresh stream always works. Root cause unknown (a lead:
-  the driver's `set_i2s_slave` / pin-mux writes to the chip's PCM pins). Two services work
-  around it, for every player: an `aplay` of silence keeps the stream fed, and
+  moment `bluealsa-aplay` first opens the speaker after boot, i.e. the first Bluetooth
+  playback; later ones, and the same player restarted, work. Ruled out: a second 44.1 or
+  48 kHz client (same buffer settings), a clock step, an HCI reset, and the driver's
+  configuration of the chip's PCM/I2S pins (a build that skips it, `skip_i2s`, froze the
+  same way). Root cause unknown. Two services work around it, for every player: an `aplay`
+  of silence keeps the stream fed, and
   [`clock-audio-watchdog`](../rootfs-overlay/usr/local/bin/clock-audio-watchdog) kills
-  whatever holds the speaker when its pointer hasn't moved for 2 s (they're respawned), so
-  a freeze costs a few seconds.
+  whatever holds the speaker when its pointer hasn't moved for ~3/4 s (checked 4 times a
+  second; ~1% of a core). They're respawned, so the first Bluetooth playback after boot
+  starts about a second late.
 - Codec: SBC only (`-c -aac`); the first attempt, with AAC, hit the freeze above, so AAC may
   well work.
 - **Reconnecting after a reboot** needs the device trusted: BlueZ otherwise asks the agent

@@ -2,23 +2,27 @@
 # Restart the speaker stream if it freezes. Sometimes (reliably when a Bluetooth phone's
 # audio first starts after boot) MediaTek's audio stops moving its playback pointer while
 # ALSA still reports the stream as running; every client of the shared dmix then blocks
-# forever. A fresh stream always works, so: if the pointer hasn't moved for 2 seconds while
-# running, kill whatever holds the device; they're all respawned by init (aplay keep-alive,
-# bluealsa-aplay, squeezelite) or retried (clock-alarm's chime).
+# forever. A fresh stream always works, so: if the pointer hasn't moved for ~3/4 s while
+# running (it moves every 21 ms period when it works), kill whatever holds the device;
+# they're all respawned by init (aplay keep-alive, bluealsa-aplay, squeezelite) or retried
+# (clock-alarm's chime). Checked 4 times a second, with shell built-ins only.
 STATUS=/proc/asound/card0/pcm0p/sub0/status
 DEV=/dev/snd/pcmC0D0p
 prev=
 stuck=0
 while :; do
-	sleep 1
-	st=$(sed -n 's/^state: //p; s/^hw_ptr *: //p' $STATUS 2>/dev/null | tr '\n' ' ')
+	sleep 0.25
+	st=
+	while read -r k v; do
+		case "$k" in state:|hw_ptr) st="$st $v" ;; esac
+	done < $STATUS 2>/dev/null
 	case "$st" in
-	RUNNING*)
+	" RUNNING"*)
 		if [ "$st" = "$prev" ]; then stuck=$((stuck + 1)); else stuck=0; fi ;;
 	*)	stuck=0 ;;
 	esac
 	prev=$st
-	[ $stuck -ge 2 ] || continue
+	[ $stuck -ge 3 ] || continue
 	pids=
 	for f in /proc/[0-9]*/fd/*; do
 		[ "$(readlink "$f" 2>/dev/null)" = $DEV ] || continue
