@@ -249,6 +249,41 @@ static void *read_file(const char *path, size_t *len)
 	return data;
 }
 
+/*
+ * The big time: hours, colon and minutes as three labels, so the colon can sit at the
+ * digits' middle. Inter's own colon sits at lowercase height and only rises between
+ * digits through an OpenType substitution, which TinyTTF doesn't apply.
+ */
+#define COLON_RAISE	26	/* px, for the 240 px font */
+
+static lv_obj_t *big_time_create(lv_obj_t *parent, const lv_font_t *font, uint32_t color)
+{
+	lv_obj_t *row = lv_obj_create(parent), *l;
+	int i;
+
+	lv_obj_remove_style_all(row);
+	lv_obj_set_size(row, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
+	lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW);
+	for (i = 0; i < 3; i++) {
+		l = lv_label_create(row);
+		lv_label_set_text(l, i == 1 ? ":" : "");
+		lv_obj_set_style_text_font(l, font, 0);
+		lv_obj_set_style_text_color(l, lv_color_hex(color), 0);
+	}
+	lv_obj_set_style_translate_y(lv_obj_get_child(row, 1), -COLON_RAISE, 0);
+	return row;
+}
+
+static void big_time_set(lv_obj_t *row, const char *hm)	/* "10:16" */
+{
+	const char *colon = strchr(hm, ':');
+
+	if (!colon)
+		return;
+	lv_label_set_text_fmt(lv_obj_get_child(row, 0), "%.*s", (int)(colon - hm), hm);
+	lv_label_set_text(lv_obj_get_child(row, 2), colon + 1);
+}
+
 static void update_time(lv_timer_t *t)
 {
 	static char last[64];
@@ -261,11 +296,11 @@ static void update_time(lv_timer_t *t)
 	strftime(buf, sizeof(buf), time_12h ? "%-I:%M" : "%H:%M", &tm);
 	if (strcmp(buf, last)) {
 		strcpy(last, buf);
-		lv_label_set_text(time_label, buf);
+		big_time_set(time_label, buf);
 		if (np_time)
 			lv_label_set_text(np_time, buf);
 		if (alarm_time)
-			lv_label_set_text(alarm_time, buf);
+			big_time_set(alarm_time, buf);
 		strftime(buf, sizeof(buf), "%A %e %B", &tm);
 		lv_label_set_text(date_label, buf);
 		if (icon_animation == ANIM_MINUTE)
@@ -1651,10 +1686,7 @@ static void create_alarm_views(lv_obj_t *scr, const lv_font_t *big, const lv_fon
 	lv_obj_set_clickable(alarm_panel, true);
 	lv_obj_set_hidden(alarm_panel, true);
 
-	alarm_time = lv_label_create(alarm_panel);
-	lv_label_set_text(alarm_time, "");
-	lv_obj_set_style_text_font(alarm_time, big, 0);
-	lv_obj_set_style_text_color(alarm_time, lv_color_hex(0xf0f0f0), 0);
+	alarm_time = big_time_create(alarm_panel, big, 0xf0f0f0);
 	lv_obj_align(alarm_time, LV_ALIGN_CENTER, 0, -60);	/* where the clock face has it */
 
 	row = lv_obj_create(alarm_panel);
@@ -1733,9 +1765,7 @@ int main(int argc, char **argv)
 	lv_obj_set_style_bg_color(scr, lv_color_black(), 0);
 	lv_obj_set_style_bg_opa(scr, LV_OPA_COVER, 0);
 
-	time_label = lv_label_create(scr);
-	lv_obj_set_style_text_font(time_label, big, 0);
-	lv_obj_set_style_text_color(time_label, lv_color_hex(0xe8e8e8), 0);
+	time_label = big_time_create(scr, big, 0xe8e8e8);
 	lv_obj_align(time_label, LV_ALIGN_CENTER, 0, -60);
 
 	date_label = lv_label_create(scr);
