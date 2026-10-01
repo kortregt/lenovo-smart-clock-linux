@@ -25,7 +25,7 @@ ttyGS0::respawn:/sbin/getty -n -l /usr/local/bin/autologin 0 ttyGS0 vt100
 ::respawn:/usr/bin/dbus-daemon --system --nofork --nopidfile
 ::respawn:/bin/sh -c "sleep 2; exec /usr/lib/bluetooth/bluetoothd -n"
 ::respawn:/bin/sh -c "while [ ! -e /dev/stpbt ]; do sleep 2; done; sleep 1; exec /usr/local/sbin/btrelay"
-::respawn:/bin/sh -c "sleep 5; exec /usr/bin/bluealsa -p a2dp-sink -c -aac -S"
+::respawn:/bin/sh -c "sleep 5; exec /usr/bin/bluealsa -p a2dp-sink -S"
 ::respawn:/bin/sh -c "until pidof bluealsa >/dev/null; do sleep 1; done; exec /usr/bin/bluealsa-aplay -D default --single-audio --pcm-buffer-time=1000000"
 ::respawn:/bin/sh -c "sleep 6; exec /usr/bin/bt-agent -c NoInputNoOutput"
 ::respawn:/bin/sh -c "sleep 8; exec /usr/local/bin/clock-bt-trust"

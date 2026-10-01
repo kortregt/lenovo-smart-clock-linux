@@ -53,9 +53,8 @@ makes it a loudspeaker, always discoverable and pairable. About 15 MB of RAM, no
   On the way, these were ruled out: a second 44.1/48 kHz client, a clock step, HCI resets,
   the driver's PCM/I2S pin setup (`skip_i2s` experiment), dmix period size, and interrupt
   latency on the single online core.
-- Codec: SBC only (`-c -aac`); the first attempt, with AAC, hit the freeze above, so AAC may
-  well work. `dmix` uses 100 ms periods (bluez-alsa's advice for resampled 44.1 kHz
-  Bluetooth audio).
+- Codecs: SBC and AAC; iPhones pick AAC (decoding it takes ~8% of a core while playing).
+  `dmix` uses 100 ms periods (bluez-alsa's advice for resampled 44.1 kHz Bluetooth audio).
 - **Reconnecting after a reboot** needs the device trusted: BlueZ otherwise asks the agent
   to authorize each profile connection, and `bt-agent` refuses.
   [`clock-bt-trust`](../rootfs-overlay/usr/local/bin/clock-bt-trust) trusts paired devices.
