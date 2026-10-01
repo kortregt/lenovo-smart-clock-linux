@@ -9,6 +9,9 @@
  * The curve is read from /etc/clock/autobright.conf:
  *   CURVE="3:6 20:60 100:130 300:190 3000:255"      (sensor reading:backlight level, log-interpolated)
  *
+ * SIGUSR1 lights the screen up for BOOST_S seconds, e.g. for a tap on the case: to twice
+ * its level, and at least BOOST_LEVEL (so at night it's a big step).
+ *
  *   autobright [-v]
  *
  * Build (static, so it runs on Alpine's musl):
@@ -17,6 +20,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <math.h>
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -37,12 +41,21 @@
 #define SMOOTH		0.25	/* weight of each new reading */
 #define DEADBAND	0.06	/* ignore target changes under 6% */
 #define MAX_POINTS	16
+#define BOOST_LEVEL	150
+#define BOOST_S		10
 
 static int npoints;
 static double curve_x[MAX_POINTS], curve_y[MAX_POINTS];	/* log(reading), level */
 static int verbose;
 
 static int i2c_fd;
+static volatile sig_atomic_t boost_requested;
+
+static void on_usr1(int sig)
+{
+	(void)sig;
+	boost_requested = 1;
+}
 
 static int reg_write(unsigned char reg, unsigned char val)
 {
@@ -147,11 +160,12 @@ int main(int argc, char **argv)
 	double avg, raw, target, level;
 	const double k = 1 - exp(-TICK_MS / 1000.0 / FADE_TAU);
 	struct timespec tick = { 0, TICK_MS * 1000000L };
-	int since_read = 0, shown;
+	int since_read = 0, shown, boost_ticks = 0;
 
 	if (argc > 1 && !strcmp(argv[1], "-v"))
 		verbose = 1;
 	load_conf();
+	signal(SIGUSR1, on_usr1);
 	if (verbose) {
 		int i;
 
@@ -200,8 +214,19 @@ int main(int argc, char **argv)
 						raw, avg, target, level);
 			}
 		}
-		/* fade in log space */
-		level = exp(log(level) + (log(target) - log(level)) * k);
+		if (boost_requested) {
+			boost_requested = 0;
+			boost_ticks = BOOST_S * 1000 / TICK_MS;
+		}
+		/* fade in log space; up to a boost three times as fast */
+		if (boost_ticks > 0) {
+			double boost = fmin(255, fmax(BOOST_LEVEL, target * 2));
+
+			boost_ticks--;
+			level = exp(log(level) + (log(boost) - log(level)) * k * 3);
+		} else {
+			level = exp(log(level) + (log(target) - log(level)) * k);
+		}
 		if ((int)lround(level) != shown) {
 			shown = lround(level);
 			if (shown < 1)

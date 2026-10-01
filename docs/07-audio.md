@@ -84,6 +84,13 @@ repeating while held), `BOTH`, `BOTH_LONG` (2 s), and `MIC_OFF`/`MIC_ON` for the
 the back (also in `/run/clock/mic`). A press waits 150 ms for the other button, so pressing
 both doesn't change the volume. Volume up and down are the only actions set so far.
 
+Taps on the case come from the BMA253 accelerometer's tap detector: `clockkeys` sets it up
+over `/dev/i2c-0` (single taps, latched on INT1 = gpio 402) and counts two taps within
+500 ms as a double tap, giving `TAP` and `DOUBLE_TAP` (`TAP_THRESHOLD` sets the force,
+x 62.5 mg, default 10). A double tap snoozes a ringing alarm and otherwise lights the screen
+up for 10 seconds (`autobright` takes `SIGUSR1` for that). The chip also reports each tap's
+axis and sign: taps on top come out as -x, knocks on the table under it as +z or +x.
+
 ## A trap: the codec's headphone calibration
 
 Reading the MT8167 codec's **"HP DC Offsets"** mixer control the first time after boot runs
@@ -95,5 +102,5 @@ in [10](10-bluetooth.md).
 ## Other chips the app drives
 
 The same app also talks to a **Bosch BMA253 accelerometer** (`0-0018`, chip ID `0xfa`;
-probably tap detection), an **LTR-578/LTR-390 light/proximity sensor** (`0-0053`), and GPIOs
-15/16 for what look like the mic-mute and camera-switch inputs. Not wired up yet.
+now used for taps, above) and an **LTR-578/LTR-390 light/proximity sensor** (`0-0053`; the
+backlight, see [08](08-display.md)). GPIOs 15/16 are the accelerometer's interrupt lines.

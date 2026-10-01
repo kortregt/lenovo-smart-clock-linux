@@ -25,7 +25,7 @@ soldering anything. A USB-A-to-USB-A cable is the only extra hardware.
 | Clock face | ✅ | LVGL: time, date, weather, forecast on tap; see [08](docs/08-display.md#the-clock-face) |
 | Automatic brightness | ✅ | Light sensor → backlight, smooth fades; see [08](docs/08-display.md#automatic-brightness) |
 | Touchscreen | ✅ | Tap for the forecast; see [08](docs/08-display.md#touch) |
-| Buttons + mic switch | ✅ | Volume up/down (hardware amp volume); combos configurable; see [07](docs/07-audio.md#volume-and-buttons) |
+| Buttons + mic switch | ✅ | Volume up/down (hardware amp volume); combos configurable; double-tap the case (accelerometer) to snooze or light the screen; see [07](docs/07-audio.md#volume-and-buttons) |
 | Accelerometer | ⏳ | Not wired into anything yet |
 | Bluetooth | ✅ | Bluetooth speaker (A2DP sink) through a relay to BlueZ; see [10](docs/10-bluetooth.md) |
 | Home Assistant | 🟡 | Weather and forecast on the clock face; see [09](docs/09-home-assistant.md) |
