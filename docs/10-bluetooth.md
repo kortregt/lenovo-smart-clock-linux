@@ -54,6 +54,12 @@ makes it a loudspeaker, always discoverable and pairable. About 15 MB of RAM, no
   the driver's PCM/I2S pin setup (`skip_i2s` experiment), dmix period size, and interrupt
   latency on the single online core.
 - Codecs: SBC and AAC; iPhones pick AAC (decoding it takes ~8% of a core while playing).
+  Compared from an iPhone by recording the decoded stream (`bluealsa-cli open`) of a test
+  signal: both flat to ~19 kHz; SBC tracks the waveform more closely (1 kHz THD+N -70 vs
+  -64 dB) but adds a broadband noise floor rising in the treble, AAC keeps the space
+  between tones far cleaner (multitone 63 vs 45 dB) by hiding its error under the music.
+  In a blind ABX of the same music clip through the clock's speaker, 3/8: no audible
+  difference here.
   `dmix` uses 100 ms periods (bluez-alsa's advice for resampled 44.1 kHz Bluetooth audio).
 - **Reconnecting after a reboot** needs the device trusted: BlueZ otherwise asks the agent
   to authorize each profile connection, and `bt-agent` refuses.
