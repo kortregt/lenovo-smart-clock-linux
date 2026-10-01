@@ -15,6 +15,21 @@ mount -t tmpfs -o mode=1777 tmpfs /tmp
 mount -t tmpfs -o mode=755 tmpfs /run
 mount -o remount,rw /
 
+# Missing firmware: don't wait. When a file isn't in /lib/firmware the kernel waits (60 s) for
+# userspace to supply it, and the touch driver, which asks for FT6336U_Holitech.bin to see
+# whether the touch controller needs an update (deliberately not shipped: it would reflash
+# the controller), keeps touch off until then. Answer "no" to any request that's waiting,
+# and give later ones 1 s.
+echo 1 > /sys/class/firmware/timeout
+(
+	for i in $(seq 1 100); do
+		for l in /sys/class/firmware/*/loading; do
+			[ -e "$l" ] && echo -1 > "$l"
+		done
+		sleep 0.2
+	done
+) &
+
 # Ubuntu-era noise suppression and kernel log level for the console.
 echo 0 > /proc/sys/debug/exception-trace 2>/dev/null
 hostname -F /etc/hostname

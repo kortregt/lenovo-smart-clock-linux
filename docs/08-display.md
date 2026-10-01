@@ -76,6 +76,13 @@ release within ~30 ms, between two polls of a UI toolkit, so the clock face latc
 press until it has been reported. It uses touch to show the forecast
 ([09](09-home-assistant.md)).
 
+**Touch was dead for the first minute after boot.** At 5 s the driver asks for
+`FT6336U_Holitech.bin` to see whether the touch controller needs a firmware update, with
+touch off meanwhile. The file is deliberately not installed (the driver would reflash the
+controller), and the kernel then waits 60 s for userspace to supply it. `rcS` now sets the
+firmware fallback timeout to 1 s and cancels any request already waiting, so touch works
+from about 13 s.
+
 ## Why `/dev/fb0` was black (the bug patch 0004 fixes)
 
 With no framebuffer handed over by the bootloader, the driver (`mtkfb`, in its

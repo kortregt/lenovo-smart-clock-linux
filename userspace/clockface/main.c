@@ -94,6 +94,7 @@ static unsigned char *fb;
 static lv_obj_t *time_label, *date_label, *weather_label;
 static lv_obj_t *forecast_panel, *fc_day[FORECAST_DAYS];
 static lv_obj_t *fc_high[FORECAST_DAYS], *fc_low[FORECAST_DAYS];
+static lv_obj_t *fc_loading;	/* "Forecast loading..." until ha-poll has one */
 static lv_timer_t *forecast_timer;
 static lv_obj_t *vol_panel, *vol_icon, *vol_bar;
 static char alarm_state[64];	/* clock-alarm's state: idle, ringing, snoozed */
@@ -473,11 +474,29 @@ static void hide_forecast(lv_timer_t *t)
 	pause_forecast_icons(true);
 }
 
+/* Show the days, or "loading" while there's no forecast yet (just after boot) */
+static void fill_forecast(void)
+{
+	int n = load_forecast(), i;
+
+	lv_obj_set_hidden(fc_loading, n > 0);
+	for (i = 0; i < FORECAST_DAYS; i++)
+		lv_obj_set_hidden(lv_obj_get_parent(fc_day[i]), i >= n);
+}
+
+static void retry_forecast(lv_timer_t *t)
+{
+	(void)t;
+	if (!lv_obj_is_hidden(forecast_panel) && !lv_obj_is_hidden(fc_loading))
+		fill_forecast();
+}
+
 static void on_tap(lv_event_t *e)
 {
 	if (lv_event_get_current_target(e) == forecast_panel) {
 		hide_forecast(NULL);
-	} else if (load_forecast() > 0) {
+	} else {
+		fill_forecast();
 		lv_obj_set_hidden(forecast_panel, false);
 		pause_forecast_icons(false);
 		lv_timer_reset(forecast_timer);
@@ -606,6 +625,13 @@ static void create_forecast_panel(lv_obj_t *scr, const lv_font_t *text)
 		fc_high[i] = label(col, text, 0xe8e8e8);
 		fc_low[i] = label(col, text, 0x707070);
 	}
+	fc_loading = label(forecast_panel, text, 0x707070);
+	lv_label_set_text(fc_loading, "Forecast loading...");
+	lv_obj_set_floating(fc_loading, true);
+	lv_obj_center(fc_loading);
+	lv_obj_set_hidden(fc_loading, true);
+	lv_timer_create(retry_forecast, 1000, NULL);
+
 	forecast_timer = lv_timer_create(hide_forecast, FORECAST_MS, NULL);
 	lv_timer_pause(forecast_timer);
 }
