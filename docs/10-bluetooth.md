@@ -66,3 +66,22 @@ makes it a loudspeaker, always discoverable and pairable. About 15 MB of RAM, no
   [`clock-bt-trust`](../rootfs-overlay/usr/local/bin/clock-bt-trust) trusts paired devices.
 - Anyone in range can pair and play. That's the point of a speaker, but `bluetoothctl
   discoverable off` (or `pairable off`) closes it once your devices are paired.
+
+## Hands-free (not working)
+
+An experiment in making the clock a Bluetooth speakerphone (bluez-alsa `-p hfp-hf -p
+hsp-hs`, its mics to the phone). The profile side works: an iPhone connects HFP, picks
+mSBC and opens an eSCO link. The call audio never reaches Linux, though:
+
+- Over HCI: no SCO data packets in either direction, also with the driver's I2S setup
+  skipped (`0xFC72` after each reset; the controller seems to default to its pins anyway).
+  The driver defines `0xFC1D` "route SCO to host", but it's a read: it ignores parameters
+  and returns `0B 00 00 00 00 00 00 00`; `0xFC1C` is accepted and changes nothing it shows.
+- Over the pins: the machine driver (`mt8516-mt7668-ref`) has the SoC side, the MRG
+  interface into `VOIP_Call_BT_Capture` (`hw:0,5`, with `DAIBT Mux` = MRG and `O11 I02
+  Switch` on). It records, but only zeros, and at about a third of real time, so the
+  interface isn't clocked (or the pins aren't connected). Android never made calls on this
+  clock, so nothing upstream sets it up.
+
+Next steps if anyone picks it up: the MRG clocking/pin mux in the SoC, or MediaTek's
+Android Bluetooth HAL (`libbluetooth_mtk`) for the routing command.
