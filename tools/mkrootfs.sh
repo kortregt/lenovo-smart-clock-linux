@@ -65,9 +65,13 @@ install -m 755 "$BUILD/squeezelite" rootfs/usr/local/bin/squeezelite
 # Bluetooth: MediaTek's /dev/stpbt relayed to BlueZ.
 mkdir -p rootfs/usr/local/sbin
 aarch64-linux-gnu-gcc -O2 -static -Wall -o rootfs/usr/local/sbin/btrelay "$PROJ/userspace/btrelay.c"
-# Buttons and mic switch.
+# Buttons, mic switch and taps.
 aarch64-linux-gnu-gcc -O2 -static -Wall -o rootfs/usr/local/bin/clockkeys \
 	"$PROJ/userspace/clockkeys.c"
+# `reboot-to bootloader`: straight to fastboot (freestanding, no libc), and a display test.
+aarch64-linux-gnu-gcc -Os -static -nostdlib -ffreestanding -fno-stack-protector \
+	-o rootfs/usr/local/sbin/reboot-to "$PROJ/initramfs/probe/reboot-to.c"
+aarch64-linux-gnu-gcc -O2 -static -Wall -o rootfs/usr/local/sbin/fbtest "$PROJ/userspace/fbtest.c"
 
 mkdir -p -m 700 rootfs/root/.ssh
 cp "$SSH_PUBKEY" rootfs/root/.ssh/authorized_keys
