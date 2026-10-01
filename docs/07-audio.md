@@ -82,7 +82,8 @@ GPIO edge interrupts and runs a command per gesture from
 [`/etc/clock/keys.conf`](../rootfs-overlay/etc/clock/keys.conf): `VOLUP`/`VOLDOWN` (press,
 repeating while held), `BOTH`, `BOTH_LONG` (2 s), and `MIC_OFF`/`MIC_ON` for the switch on
 the back (also in `/run/clock/mic`). A press waits 150 ms for the other button, so pressing
-both doesn't change the volume. Volume up and down are the only actions set so far.
+both doesn't change the volume. As set up: the buttons change the volume, both together
+play/pause, and while an alarm rings any press snoozes and holding both stops it.
 
 Taps on the case come from the BMA253 accelerometer's tap detector: `clockkeys` sets it up
 over `/dev/i2c-0` (single taps, latched on INT1 = gpio 402) and counts two taps within

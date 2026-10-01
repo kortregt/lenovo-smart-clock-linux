@@ -73,8 +73,8 @@ The FocalTech FT6336U touchscreen works with the kernel's `mtk-tpd` driver as
 `ABS_MT_TRACKING_ID`, plus `BTN_TOUCH`), in panel coordinates, x 0–480 and y 0–800, like the
 framebuffer. So a touch at panel (x, y) is screen (y, 479 − x). A quick tap can press and
 release within ~30 ms, between two polls of a UI toolkit, so the clock face latches each
-press until it has been reported. It uses touch to show the forecast
-([09](09-home-assistant.md)).
+press until it has been reported. It uses touch for the forecast (tap), the alarms
+(long-press) and the now-playing controls ([09](09-home-assistant.md)).
 
 **Touch was dead for the first minute after boot.** At 5 s the driver asks for
 `FT6336U_Holitech.bin` to see whether the touch controller needs a firmware update, with

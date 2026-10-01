@@ -20,18 +20,18 @@ soldering anything. A USB-A-to-USB-A cable is the only extra hardware.
 | Root shell over USB (no UART) | ✅ | USB gadget serial + network; see [05](docs/05-usb-and-alpine.md) |
 | Alpine Linux as the default OS | ✅ | Slot B; stock Android stays on slot A; see [05](docs/05-usb-and-alpine.md) |
 | Wi-Fi (MT7668) | ✅ | Vendor module + firmware; see [06](docs/06-wifi.md) |
-| Speaker + microphones | ✅ | Amp and ADC replayed from the stock app; see [07](docs/07-audio.md) |
+| Speaker + microphones | ✅ | Amp and ADC replayed from the stock app (the mics record, but nothing uses them yet); see [07](docs/07-audio.md) |
 | Display | ✅ | Plain `/dev/fb0` (kernel patch 0004); panel mounted sideways; see [08](docs/08-display.md) |
-| Clock face | ✅ | LVGL: time, date, weather, forecast on tap; see [08](docs/08-display.md#the-clock-face) |
-| Automatic brightness | ✅ | Light sensor → backlight, smooth fades; see [08](docs/08-display.md#automatic-brightness) |
-| Touchscreen | ✅ | Tap for the forecast; see [08](docs/08-display.md#touch) |
-| Buttons + mic switch | ✅ | Volume up/down (hardware amp volume); combos configurable; double-tap the case (accelerometer) to snooze or light the screen; see [07](docs/07-audio.md#volume-and-buttons) |
-| Accelerometer | ⏳ | Not wired into anything yet |
-| Bluetooth | ✅ | Bluetooth speaker (A2DP sink) through a relay to BlueZ; see [10](docs/10-bluetooth.md) |
-| Home Assistant | 🟡 | Weather and forecast on the clock face; see [09](docs/09-home-assistant.md) |
+| Clock face | ✅ | LVGL: time (12 or 24 h), date, weather, next alarm; see [08](docs/08-display.md#the-clock-face) |
+| Automatic brightness | ✅ | Light sensor → backlight, smooth fades, dim at night; see [08](docs/08-display.md#automatic-brightness) |
+| Touchscreen | ✅ | Tap for the forecast, long-press for the alarms, now-playing controls; see [08](docs/08-display.md#touch) |
+| Buttons + mic switch | ✅ | Volume up/down (hardware amp volume), snooze; combos configurable; see [07](docs/07-audio.md#volume-and-buttons) |
+| Accelerometer | ✅ | Taps on the case: a double tap snoozes or lights the screen; see [07](docs/07-audio.md#volume-and-buttons) |
+| Bluetooth | ✅ | Bluetooth speaker (A2DP sink, SBC/AAC) through a relay to BlueZ; hands-free calls don't work (the call audio never reaches Linux); see [10](docs/10-bluetooth.md) |
+| Home Assistant | ✅ | Weather and forecast, music, alarms (helpers, a dashboard card, a next-alarm sensor); see [09](docs/09-home-assistant.md) |
 | Music | ✅ | Music Assistant player (squeezelite, Spotify Connect via MA); one volume shared with the buttons; see [09](docs/09-home-assistant.md#music-music-assistant) |
 | Now playing | ✅ | Cover, title, progress and touch controls; see [09](docs/09-home-assistant.md#now-playing) |
-| Alarms | ✅ | Set in Home Assistant helpers or on the clock, ring offline too; music or chime, fade-in, snooze; see [09](docs/09-home-assistant.md#alarms) |
+| Alarms | ✅ | Set in Home Assistant or on the clock, ring offline too; music or a built-in sound, fade-in, snooze; see [09](docs/09-home-assistant.md#alarms) |
 
 A reference of every chip, bus address, GPIO and partition found along the way is in
 [docs/hardware.md](docs/hardware.md).
@@ -48,7 +48,7 @@ A reference of every chip, bus address, GPIO and partition found along the way i
                   ├─ clockface: LVGL clock on /dev/fb0
                   ├─ ha-poll: weather from Home Assistant for the clock face
                   ├─ ha-media: now playing from Home Assistant, and its controls
-                  ├─ clock-alarm: alarms from Home Assistant helpers
+                  ├─ clock-alarm: alarms (Home Assistant helpers, or set on the clock)
                   ├─ autobright: backlight from the light sensor
                   ├─ clockkeys: buttons (volume), the mic switch, taps
                   ├─ squeezelite: Music Assistant player, volume -> amp
@@ -64,10 +64,10 @@ A reference of every chip, bus address, GPIO and partition found along the way i
 | [kernel/patches/](kernel/patches/) | Our changes to Google's kernel source |
 | [kernel/smartclock.config](kernel/smartclock.config) | Config options changed from stock |
 | [initramfs/](initramfs/) | The initramfs `/init` (and a tiny reboot probe used for debugging) |
-| [userspace/](userspace/) | Programs for the clock: the LVGL clock face, automatic brightness, a framebuffer test |
-| [homeassistant/](homeassistant/) | Home Assistant package: the alarm helpers |
-| [rootfs-overlay/](rootfs-overlay/) | Files layered onto Alpine: boot script, audio setup, inittab |
-| [tools/](tools/) | Build and helper scripts (boot image repack, initramfs, rootfs, diagnostics) |
+| [userspace/](userspace/) | Programs for the clock: the LVGL clock face, automatic brightness, buttons and taps (`clockkeys`), the Bluetooth relay (`btrelay`), a framebuffer test |
+| [homeassistant/](homeassistant/) | Home Assistant package (the alarm helpers and next-alarm sensor), a dashboard card and dashboard |
+| [rootfs-overlay/](rootfs-overlay/) | Files layered onto Alpine: boot script, inittab, configs, alarm sounds, and the scripts for alarms, volume and Home Assistant |
+| [tools/](tools/) | Build and helper scripts (boot image repack, initramfs, rootfs, squeezelite, diagnostics) |
 | [at_auth_unlock.py](at_auth_unlock.py) | AOSP's Android Things AVB unlock tool, fixed for Python 3 |
 
 Not in the repo (you need your own): your device backup, the AVB unlock credentials, the
@@ -93,4 +93,6 @@ vendor firmware blobs (extracted from your own `vendor_a` partition by
 - [bkerler/mtkclient](https://github.com/bkerler/mtkclient) for BootROM access
 - [LVGL](https://lvgl.io), [Inter](https://rsms.me/inter/), Home Assistant's weather icons
   and [Meteocons](https://meteocons.com) (Bas Milius) for the clock face
+- [Music Assistant](https://music-assistant.io), [squeezelite](https://github.com/ralph-irving/squeezelite),
+  [BlueZ](https://www.bluez.org) and [bluez-alsa](https://github.com/arkq/bluez-alsa) for the audio
 - [skylot/jadx](https://github.com/skylot/jadx), used to read the stock app's hardware setup
