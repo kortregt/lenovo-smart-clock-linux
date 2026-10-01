@@ -50,7 +50,7 @@ A reference of every chip, bus address, GPIO and partition found along the way i
                   ├─ ha-media: now playing from Home Assistant, and its controls
                   ├─ clock-alarm: alarms from Home Assistant helpers
                   ├─ autobright: backlight from the light sensor
-                  ├─ clockkeys: buttons (volume) and the mic switch
+                  ├─ clockkeys: buttons (volume), the mic switch, taps
                   ├─ squeezelite: Music Assistant player, volume -> amp
                   └─ BlueZ + btrelay + bluez-alsa: Bluetooth speaker
  slot A: untouched stock Android Things    -> `fastboot set_active a` to go back
