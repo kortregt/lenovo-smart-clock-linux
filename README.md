@@ -26,7 +26,7 @@ soldering anything. A USB-A-to-USB-A cable is the only extra hardware.
 | Automatic brightness | ✅ | Light sensor → backlight, smooth fades, dim at night; see [08](docs/08-display.md#automatic-brightness) |
 | Touchscreen | ✅ | Tap for the forecast, long-press for the alarms, now-playing controls; see [08](docs/08-display.md#touch) |
 | Buttons + mic switch | ✅ | Volume up/down (hardware amp volume), snooze; combos configurable; see [07](docs/07-audio.md#volume-and-buttons) |
-| Accelerometer | ✅ | Taps on the case: a double tap snoozes or lights the screen; see [07](docs/07-audio.md#volume-and-buttons) |
+| Accelerometer | ✅ | Taps on the case: a double tap snoozes or lights the screen; see [07](docs/07-audio.md#taps-on-the-case-accelerometer) |
 | Bluetooth | ✅ | Bluetooth speaker (A2DP sink, SBC/AAC) through a relay to BlueZ; hands-free calls don't work (the call audio never reaches Linux); see [10](docs/10-bluetooth.md) |
 | Home Assistant | ✅ | Weather and forecast, music, alarms (helpers, a dashboard card, a next-alarm sensor); see [09](docs/09-home-assistant.md) |
 | Music | ✅ | Music Assistant player (squeezelite, Spotify Connect via MA); one volume shared with the buttons; see [09](docs/09-home-assistant.md#music-music-assistant) |

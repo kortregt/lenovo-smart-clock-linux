@@ -85,12 +85,32 @@ the back (also in `/run/clock/mic`). A press waits 150 ms for the other button, 
 both doesn't change the volume. As set up: the buttons change the volume, both together
 play/pause, and while an alarm rings any press snoozes and holding both stops it.
 
-Taps on the case come from the BMA253 accelerometer's tap detector: `clockkeys` sets it up
-over `/dev/i2c-0` (single taps, latched on INT1 = gpio 402) and counts two taps within
-500 ms as a double tap, giving `TAP` and `DOUBLE_TAP` (`TAP_THRESHOLD` sets the force,
-x 62.5 mg, default 10). A double tap snoozes a ringing alarm and otherwise lights the screen
-up for 10 seconds (`autobright` takes `SIGUSR1` for that). The chip also reports each tap's
-axis and sign: taps on top come out as -x, knocks on the table under it as +z or +x.
+## Taps on the case (accelerometer)
+
+The clock has a **Bosch BMA253** accelerometer on i2c-0 at `0x18` (chip ID `0xfa`), with no
+kernel driver. Its two interrupt pins go to the SoC: **INT1 is GPIO 15 (gpio 402), INT2 is
+GPIO 16 (gpio 403)**, both active high (found by routing the chip's data-ready interrupt to
+one pin at a time). Gravity reads mostly along x, from the tilt of the case.
+
+`clockkeys` uses the chip's own tap detector, so nothing polls the sensor: over
+`/dev/i2c-0` it sets ±2 g, enables the single-tap interrupt on INT1, latched, and waits for
+gpio 402 with the other buttons. On each tap it reads which axis it came on and clears the
+latch. Two taps within 500 ms are a double tap. The chip has its own double-tap detection,
+but timing it in `clockkeys` turned out more reliable.
+
+| `keys.conf` | Default |
+|---|---|
+| `TAP` | nothing |
+| `DOUBLE_TAP` | snooze a ringing alarm, otherwise light the screen up for 10 s |
+| `TAP_THRESHOLD` | 10 (× 62.5 mg; 1–31, lower is more sensitive) |
+
+Lighting the screen up is `autobright`'s `SIGUSR1`: twice the current level and at least
+150, so at night it goes from about 6 to 150, then fades back.
+
+The direction register (`0x0B`) tells taps apart: taps on top come out as −x, on the sides
+as ±y, knocks on the table under the clock as +z or +x. A quick double knock on the table
+counts as a double tap too; filtering on −x would stop that if it's a problem. Not tested
+yet: whether the speaker's vibration during a loud alarm looks like taps.
 
 ## A trap: the codec's headphone calibration
 
