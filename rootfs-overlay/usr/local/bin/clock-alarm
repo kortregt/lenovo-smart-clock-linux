@@ -11,6 +11,9 @@
 #   clock-alarm snooze|stop  (the clock face and buttons)
 #   clock-alarm button       snooze if ringing (exit 0), else exit 1: for keys.conf
 #   clock-alarm ring [N]     ring now, to try it out
+#   clock-alarm set N on|off [HH:MM DAYS]
+#                            change alarm N (the clock face's editor). It takes effect at
+#                            once; Home Assistant's helpers follow, later if it's down.
 #
 # Ringing pauses anything already playing (it stays paused afterwards), then plays the
 # sound, starting quiet and fading up to the alarm volume over a minute: a built-in sound
@@ -25,6 +28,8 @@ STATE=/run/clock/alarm
 NEXT=/run/clock/alarm-next
 RINGER=/run/clock/alarm.ringer		# pid of the ringing process
 STARTED_MUSIC=/run/clock/alarm.music	# exists while the alarm's own music plays
+PENDING=/var/lib/clock/alarms.pending	# alarms changed here, not yet in Home Assistant
+LOCK=/run/clock/alarm.lock		# between sync and set
 SOUNDS=/usr/local/share/clock/sounds	# chime.wav, soft-bells.wav, beeps.wav
 N_ALARMS=3
 SNOOZE_S=540
@@ -66,6 +71,7 @@ cfg() { sed -n "s/^$1=//p" $CACHE 2>/dev/null; }
 
 # ---- sync: Home Assistant helpers -> the cache ------------------------------------------
 sync() {
+	push_pending || return 1	# don't overwrite changes Home Assistant hasn't got yet
 	json=$(ha /api/states) || return 1
 	printf '%s' "$json" | jq -r --argjson n $N_ALARMS '
 		(map({key: .entity_id, value: .state}) | from_entries) as $s
@@ -77,6 +83,50 @@ sync() {
 		  "volume=\($s["input_number.smart_clock_alarm_volume"] // "50" | tonumber? // 50 | floor)"
 	' > $CACHE.tmp 2>/dev/null && [ -s $CACHE.tmp ] && mv $CACHE.tmp $CACHE
 }
+
+# ---- set: the clock face -> the cache, then Home Assistant ---------------------------------
+push() {	# alarm: send its cached settings to Home Assistant
+	set -- $1 $(cfg alarm$1)
+	[ $# -eq 4 ] || return 1
+	ha /api/services/input_boolean/turn_$2 \
+		"{\"entity_id\":\"input_boolean.smart_clock_alarm_$1\"}" >/dev/null 2>&1 &&
+	ha /api/services/input_datetime/set_datetime \
+		"{\"entity_id\":\"input_datetime.smart_clock_alarm_$1_time\",\"time\":\"$3:00\"}" \
+		>/dev/null 2>&1 &&
+	ha /api/services/input_select/select_option \
+		"{\"entity_id\":\"input_select.smart_clock_alarm_$1_days\",\"option\":\"$(echo $4 | tr _ ' ')\"}" \
+		>/dev/null 2>&1
+}
+
+push_pending() {
+	[ -s $PENDING ] || return 0
+	for i in $(sort -u $PENDING); do
+		push $i || return 1
+		sed -i "/^$i\$/d" $PENDING
+	done
+}
+
+set_alarm() {	# alarm on|off [HH:MM days]
+	n=$1 onoff=$2 hm=${3:-} days=$(echo "${4:-}" | tr ' ' _)
+	case "$n" in [1-9]) [ $n -le $N_ALARMS ] ;; *) false ;; esac || return 2
+	case "$onoff" in on|off) ;; *) return 2 ;; esac
+	set -- $(cfg alarm$n)
+	[ -n "$hm" ] || hm=${2:-07:00}
+	[ -n "$days" ] || days=${3:-Every_day}
+	echo "$hm" | grep -qx '[0-2][0-9]:[0-5][0-9]' || return 2
+	case "$days" in Every_day|Weekdays|Weekends|Once) ;; *) return 2 ;; esac
+	if grep -q "^alarm$n=" $CACHE 2>/dev/null; then
+		sed -i "s/^alarm$n=.*/alarm$n=$onoff $hm $days/" $CACHE
+	else
+		echo "alarm$n=$onoff $hm $days" >> $CACHE
+	fi
+	echo $n >> $PENDING
+	write_next
+	push_pending
+	return 0
+}
+
+locked() { ( flock 9; "$@" ) 9>$LOCK; }
 
 # Does alarm "on HH:MM days" ring on weekday $2 (1 = Monday) at time $3 (HH:MM)?
 due() {	# "on HH:MM days" weekday HH:MM
@@ -206,8 +256,14 @@ stop)
 ring)
 	ring ${2:-0}
 	exit 0 ;;
+set)
+	shift
+	locked set_alarm "$@"
+	[ $? = 2 ] && { echo "usage: clock-alarm set N on|off [HH:MM DAYS]" >&2; exit 2; }
+	exit 0 ;;
 '') ;;
-*)	echo "usage: clock-alarm [snooze | stop | button | ring [N]]" >&2; exit 2 ;;
+*)	echo "usage: clock-alarm [snooze | stop | button | ring [N] | set N on|off [HH:MM DAYS]]" >&2
+	exit 2 ;;
 esac
 
 # ---- the daemon ----------------------------------------------------------------------------
@@ -217,7 +273,7 @@ last_fired=
 while :; do
 	now=$(date +%s)
 	if [ $((now - last_sync)) -ge 60 ]; then
-		sync && last_sync=$now
+		locked sync && last_sync=$now
 		write_next
 	fi
 	hm=$(date +%H:%M)

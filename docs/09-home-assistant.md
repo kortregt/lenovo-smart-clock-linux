@@ -141,3 +141,10 @@ or the network is down. When one rings it:
 The next alarm shows by a bell on the clock face's weather line ("5:20 PM" today, "Thu
 7:00 AM" otherwise); while snoozed it shows the snooze time, and tapping it stops the alarm.
 `clock-alarm ring` rings straight away, to try it.
+
+The alarms can be set on the clock too: long-press the clock face (or tap the bell) for
+the list, with a switch for each alarm, and tap one to change its time (wheels) and days;
+Save switches it on. This goes through `clock-alarm set N on|off [HH:MM DAYS]`, which
+changes the clock's copy at once and then the helpers; if Home Assistant can't be reached,
+the change is kept (`/var/lib/clock/alarms.pending`) and sent before the next sync reads the
+helpers back. Sound and volume stay in Home Assistant.

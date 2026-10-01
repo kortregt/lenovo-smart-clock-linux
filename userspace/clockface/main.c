@@ -40,6 +40,7 @@
  *   clockface [-f font.ttf]
  */
 #include <fcntl.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -542,6 +543,7 @@ static void check_volume(lv_timer_t *t)
 	lv_label_set_text(vol_icon, level == 0 ? LV_SYMBOL_MUTE :
 			  level < VOLUME_MAX / 2 ? LV_SYMBOL_VOLUME_MID : LV_SYMBOL_VOLUME_MAX);
 	lv_obj_set_hidden(vol_panel, false);
+	lv_obj_move_foreground(vol_panel);	/* over the alarm editor */
 	lv_timer_reset(vol_hide_timer);
 	lv_timer_resume(vol_hide_timer);
 }
@@ -1123,11 +1125,16 @@ static void on_alarm_button(lv_event_t *e)
 	lv_obj_set_hidden(alarm_panel, true);	/* clock-alarm confirms through ALARM_FILE */
 }
 
+static void open_alarm_list(void);
+
+/* The bell: stops a snoozed alarm, otherwise opens the alarm list */
 static void on_bell_tap(lv_event_t *e)
 {
 	(void)e;
 	if (!strcmp(alarm_state, "snoozed"))
 		alarm_command("stop");
+	else
+		open_alarm_list();
 }
 
 /* "HH:MM" (24 h) in the clock face's format; alarm times get AM / PM in 12 h mode */
@@ -1230,6 +1237,362 @@ static void update_alarm(lv_timer_t *t)
 	lv_obj_set_hidden(alarm_bell, !*text);
 }
 
+/* ---- the alarm editor -------------------------------------------------------------------
+ * Long-press the clock (or tap the bell) for the list of alarms: an on / off switch each,
+ * and a tap on one to change its time and days. Changes go through `clock-alarm set`,
+ * which keeps Home Assistant's helpers in step; the list reads clock-alarm's copy of
+ * them (ALARMS_FILE), so changes made in Home Assistant show up here too.
+ */
+#define ALARMS_FILE	"/var/lib/clock/alarms"
+#define N_ALARMS	3
+#define EDITOR_IDLE_MS	30000		/* close the editor after this long untouched */
+#define ACCENT		0x03a9f4	/* Home Assistant's blue, for "on" */
+
+static const char *const day_names[] = { "Every day", "Weekdays", "Weekends", "Once" };
+#define N_DAYS		(sizeof(day_names) / sizeof(day_names[0]))
+
+static struct {
+	bool on;
+	int h, m, days;		/* 24 h; days indexes day_names */
+} alarms[N_ALARMS];
+
+static lv_obj_t *al_list, *al_time[N_ALARMS], *al_days[N_ALARMS], *al_switch[N_ALARMS];
+static lv_obj_t *al_edit, *al_edit_title, *al_hour, *al_min, *al_ampm, *al_day[N_DAYS];
+static int al_editing, al_edit_days;
+static struct timespec al_file_time;
+
+static void alarm_set(int n)	/* clock-alarm set N on|off HH:MM DAYS */
+{
+	char num[12], hm[8];
+
+	snprintf(num, sizeof(num), "%d", n + 1);
+	snprintf(hm, sizeof(hm), "%02d:%02d", alarms[n].h, alarms[n].m);
+	if (fork() == 0) {
+		execl(ALARM_CTL, ALARM_CTL, "set", num, alarms[n].on ? "on" : "off", hm,
+		      day_names[alarms[n].days], (char *)NULL);
+		_exit(127);
+	}
+}
+
+/* ALARMS_FILE lines: alarmN=on|off HH:MM Every_day */
+static void load_alarms(void)
+{
+	char line[128], onoff[8], days[32];
+	FILE *f = fopen(ALARMS_FILE, "r");
+	int n, h, m, i;
+
+	if (!f)
+		return;
+	while (fgets(line, sizeof(line), f)) {
+		if (sscanf(line, "alarm%d=%7s %d:%d %31s", &n, onoff, &h, &m, days) != 5 ||
+		    n < 1 || n > N_ALARMS)
+			continue;
+		n--;
+		alarms[n].on = !strcmp(onoff, "on");
+		alarms[n].h = h;
+		alarms[n].m = m;
+		for (i = 0; days[i]; i++)
+			if (days[i] == '_')
+				days[i] = ' ';
+		for (i = 0; i < (int)N_DAYS; i++)
+			if (!strcmp(days, day_names[i]))
+				alarms[n].days = i;
+	}
+	fclose(f);
+}
+
+static void fill_alarm_list(void)
+{
+	char hm[8], text[16];
+	int i;
+
+	for (i = 0; i < N_ALARMS; i++) {
+		snprintf(hm, sizeof(hm), "%02d:%02d", alarms[i].h, alarms[i].m);
+		fmt_hm(text, sizeof(text), hm);
+		set_text_if(al_time[i], text);
+		set_text_if(al_days[i], day_names[alarms[i].days]);
+		lv_obj_set_style_text_color(al_time[i], lv_color_hex(alarms[i].on ? 0xf0f0f0 : 0x606060), 0);
+		lv_obj_set_state(al_switch[i], LV_STATE_CHECKED, alarms[i].on);
+	}
+}
+
+static void open_alarm_list(void)
+{
+	load_alarms();
+	fill_alarm_list();
+	lv_obj_set_hidden(al_edit, true);
+	lv_obj_set_hidden(al_list, false);
+	hide_forecast(NULL);
+}
+
+static void close_alarm_editor(void)
+{
+	lv_obj_set_hidden(al_list, true);
+	lv_obj_set_hidden(al_edit, true);
+}
+
+static void on_long_press(lv_event_t *e)
+{
+	(void)e;
+	open_alarm_list();
+}
+
+static void on_alarm_done(lv_event_t *e)
+{
+	(void)e;
+	close_alarm_editor();
+}
+
+static void on_alarm_switch(lv_event_t *e)
+{
+	int n = (int)(intptr_t)lv_event_get_user_data(e);
+
+	alarms[n].on = lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED);
+	fill_alarm_list();
+	alarm_set(n);
+}
+
+static void show_edit_days(void)
+{
+	int i;
+
+	for (i = 0; i < (int)N_DAYS; i++) {
+		lv_obj_t *l = lv_obj_get_child(al_day[i], 0);
+		bool sel = i == al_edit_days;
+
+		lv_obj_set_style_bg_color(al_day[i], lv_color_hex(sel ? 0xe8e8e8 : 0x202020), 0);
+		lv_obj_set_style_text_color(l, lv_color_hex(sel ? 0x000000 : 0xb0b0b0), 0);
+	}
+}
+
+static void on_alarm_row(lv_event_t *e)
+{
+	int n = (int)(intptr_t)lv_event_get_user_data(e), h = alarms[n].h;
+
+	al_editing = n;
+	al_edit_days = alarms[n].days;
+	lv_label_set_text_fmt(al_edit_title, "Alarm %d", n + 1);
+	if (time_12h) {
+		lv_roller_set_selected(al_hour, (h % 12 ? h % 12 : 12) - 1, LV_ANIM_OFF);
+		lv_roller_set_selected(al_ampm, h >= 12, LV_ANIM_OFF);
+	} else {
+		lv_roller_set_selected(al_hour, h, LV_ANIM_OFF);
+	}
+	lv_roller_set_selected(al_min, alarms[n].m, LV_ANIM_OFF);
+	show_edit_days();
+	lv_obj_set_hidden(al_list, true);
+	lv_obj_set_hidden(al_edit, false);
+}
+
+static void on_edit_day(lv_event_t *e)
+{
+	al_edit_days = (int)(intptr_t)lv_event_get_user_data(e);
+	show_edit_days();
+}
+
+static void on_edit_cancel(lv_event_t *e)
+{
+	(void)e;
+	open_alarm_list();
+}
+
+/* Save: the new time and days, and the alarm switched on */
+static void on_edit_save(lv_event_t *e)
+{
+	int n = al_editing, h = lv_roller_get_selected(al_hour);
+
+	(void)e;
+	if (time_12h)
+		h = (h + 1) % 12 + (lv_roller_get_selected(al_ampm) ? 12 : 0);
+	alarms[n].h = h;
+	alarms[n].m = lv_roller_get_selected(al_min);
+	alarms[n].days = al_edit_days;
+	alarms[n].on = true;
+	alarm_set(n);
+	fill_alarm_list();
+	lv_obj_set_hidden(al_edit, true);
+	lv_obj_set_hidden(al_list, false);
+}
+
+/* Follow changes from Home Assistant; close when left alone */
+static void check_alarm_editor(lv_timer_t *t)
+{
+	(void)t;
+	if (lv_obj_is_hidden(al_list) && lv_obj_is_hidden(al_edit))
+		return;
+	if (lv_display_get_inactive_time(NULL) > EDITOR_IDLE_MS) {
+		close_alarm_editor();
+		return;
+	}
+	if (file_changed(ALARMS_FILE, &al_file_time) && !lv_obj_is_hidden(al_list)) {
+		load_alarms();
+		fill_alarm_list();
+	}
+}
+
+static lv_obj_t *panel(lv_obj_t *scr)
+{
+	lv_obj_t *p = lv_obj_create(scr);
+
+	lv_obj_remove_style_all(p);
+	lv_obj_set_size(p, SCREEN_W, SCREEN_H);
+	lv_obj_set_style_bg_color(p, lv_color_black(), 0);
+	lv_obj_set_style_bg_opa(p, LV_OPA_COVER, 0);
+	lv_obj_set_style_pad_all(p, 28, 0);
+	lv_obj_set_clickable(p, true);	/* nothing underneath gets the taps */
+	lv_obj_set_hidden(p, true);
+	return p;
+}
+
+static lv_obj_t *pill_button(lv_obj_t *parent, const char *text, int w, int h,
+			     const lv_font_t *font, lv_event_cb_t cb, void *data)
+{
+	lv_obj_t *b = lv_obj_create(parent), *l;
+
+	lv_obj_remove_style_all(b);
+	lv_obj_set_size(b, w, h);
+	lv_obj_set_clickable(b, true);
+	lv_obj_set_style_radius(b, h / 2, 0);
+	lv_obj_set_style_bg_color(b, lv_color_hex(0x2a2a2a), 0);
+	lv_obj_set_style_bg_opa(b, LV_OPA_COVER, 0);
+	lv_obj_set_style_bg_color(b, lv_color_hex(0x505050), LV_STATE_PRESSED);
+	lv_obj_add_event_cb(b, cb, LV_EVENT_CLICKED, data);
+	l = lv_label_create(b);
+	lv_label_set_text(l, text);
+	lv_obj_set_style_text_font(l, font, 0);
+	lv_obj_set_style_text_color(l, lv_color_hex(0xf0f0f0), 0);
+	lv_obj_center(l);
+	return b;
+}
+
+static lv_obj_t *roller(lv_obj_t *parent, const char *options, bool infinite, int w,
+			const lv_font_t *font)
+{
+	lv_obj_t *r = lv_roller_create(parent);
+
+	lv_roller_set_options(r, options, infinite ? LV_ROLLER_MODE_INFINITE : LV_ROLLER_MODE_NORMAL);
+	lv_obj_set_width(r, w);
+	lv_obj_set_style_text_font(r, font, 0);
+	lv_obj_set_style_text_align(r, LV_TEXT_ALIGN_CENTER, 0);
+	lv_obj_set_style_text_color(r, lv_color_hex(0x505050), 0);
+	lv_obj_set_style_bg_color(r, lv_color_black(), 0);
+	lv_obj_set_style_bg_opa(r, LV_OPA_COVER, 0);
+	lv_obj_set_style_border_width(r, 0, 0);
+	lv_obj_set_style_text_line_space(r, 8, 0);
+	lv_obj_set_style_bg_color(r, lv_color_hex(0x202020), LV_PART_SELECTED);
+	lv_obj_set_style_bg_opa(r, LV_OPA_COVER, LV_PART_SELECTED);
+	lv_obj_set_style_text_color(r, lv_color_hex(0xf0f0f0), LV_PART_SELECTED);
+	lv_obj_set_style_text_font(r, font, LV_PART_SELECTED);
+	lv_obj_set_style_radius(r, 16, LV_PART_SELECTED);
+	lv_roller_set_visible_row_count(r, 3);	/* after the font: it sets the height */
+	return r;
+}
+
+static void create_alarm_editor(lv_obj_t *scr, const lv_font_t *wheel, const lv_font_t *medium,
+				const lv_font_t *small, const lv_font_t *tiny)
+{
+	static char hours[24 * 3], minutes[60 * 3];
+	lv_obj_t *row, *l, *sw;
+	int i;
+
+	/* the list */
+	al_list = panel(scr);
+	lv_obj_set_flex_flow(al_list, LV_FLEX_FLOW_COLUMN);
+	lv_obj_set_style_pad_row(al_list, 14, 0);
+
+	row = lv_obj_create(al_list);
+	lv_obj_remove_style_all(row);
+	lv_obj_set_size(row, LV_PCT(100), LV_SIZE_CONTENT);
+	l = label(row, small, 0x909090);
+	lv_label_set_text(l, "Alarms");
+	lv_obj_align(l, LV_ALIGN_LEFT_MID, 12, 0);
+	lv_obj_align(pill_button(row, "Done", 180, 70, small, on_alarm_done, NULL),
+		     LV_ALIGN_RIGHT_MID, 0, 0);
+
+	for (i = 0; i < N_ALARMS; i++) {
+		row = lv_obj_create(al_list);
+		lv_obj_remove_style_all(row);
+		lv_obj_set_size(row, LV_PCT(100), 100);
+		lv_obj_set_style_radius(row, 24, 0);
+		lv_obj_set_style_bg_color(row, lv_color_hex(0x161616), 0);
+		lv_obj_set_style_bg_opa(row, LV_OPA_COVER, 0);
+		lv_obj_set_style_bg_color(row, lv_color_hex(0x2a2a2a), LV_STATE_PRESSED);
+		lv_obj_set_style_pad_hor(row, 32, 0);
+		lv_obj_set_style_pad_column(row, 28, 0);
+		lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW);
+		lv_obj_set_flex_align(row, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER,
+				      LV_FLEX_ALIGN_CENTER);
+		lv_obj_set_clickable(row, true);
+		lv_obj_add_event_cb(row, on_alarm_row, LV_EVENT_CLICKED, (void *)(intptr_t)i);
+		al_time[i] = label(row, medium, 0xf0f0f0);
+		lv_obj_set_width(al_time[i], 230);
+		al_days[i] = label(row, tiny, 0x909090);
+		lv_obj_set_flex_grow(al_days[i], 1);
+
+		sw = al_switch[i] = lv_switch_create(row);
+		lv_obj_set_size(sw, 110, 56);
+		lv_obj_set_ext_click_area(sw, 20);
+		lv_obj_set_style_bg_color(sw, lv_color_hex(0x404040), 0);
+		lv_obj_set_style_bg_color(sw, lv_color_hex(ACCENT), LV_PART_INDICATOR | LV_STATE_CHECKED);
+		lv_obj_set_style_bg_color(sw, lv_color_hex(0xf0f0f0), LV_PART_KNOB);
+		lv_obj_set_style_pad_all(sw, -4, LV_PART_KNOB);
+		lv_obj_add_event_cb(sw, on_alarm_switch, LV_EVENT_VALUE_CHANGED, (void *)(intptr_t)i);
+	}
+
+	/* editing one: time wheels, days, Cancel / Save */
+	al_edit = panel(scr);
+	lv_obj_set_flex_flow(al_edit, LV_FLEX_FLOW_COLUMN);
+	lv_obj_set_flex_align(al_edit, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_CENTER,
+			      LV_FLEX_ALIGN_CENTER);
+	lv_obj_set_style_pad_ver(al_edit, 16, 0);
+
+	al_edit_title = label(al_edit, tiny, 0x909090);
+	lv_obj_set_floating(al_edit_title, true);
+	lv_obj_align(al_edit_title, LV_ALIGN_TOP_LEFT, 12, 8);
+
+	row = lv_obj_create(al_edit);
+	lv_obj_remove_style_all(row);
+	lv_obj_set_size(row, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
+	lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW);
+	lv_obj_set_flex_align(row, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+	lv_obj_set_style_pad_column(row, 12, 0);
+	hours[0] = minutes[0] = 0;
+	for (i = 0; i < (time_12h ? 12 : 24); i++)	/* 1-12, or 00-23 */
+		sprintf(hours + strlen(hours), "%s%.*d", i ? "\n" : "", time_12h ? 1 : 2,
+			time_12h ? i + 1 : i);
+	for (i = 0; i < 60; i++)
+		sprintf(minutes + strlen(minutes), i ? "\n%02d" : "%02d", i);
+	al_hour = roller(row, hours, true, 150, wheel);
+	l = label(row, wheel, 0xf0f0f0);
+	lv_label_set_text(l, ":");
+	al_min = roller(row, minutes, true, 150, wheel);
+	if (time_12h) {
+		al_ampm = roller(row, "AM\nPM", false, 150, medium);
+		lv_obj_set_style_margin_left(al_ampm, 20, 0);
+	}
+
+	row = lv_obj_create(al_edit);
+	lv_obj_remove_style_all(row);
+	lv_obj_set_size(row, LV_PCT(100), LV_SIZE_CONTENT);
+	lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW);
+	lv_obj_set_flex_align(row, LV_FLEX_ALIGN_SPACE_EVENLY, LV_FLEX_ALIGN_CENTER,
+			      LV_FLEX_ALIGN_CENTER);
+	for (i = 0; i < (int)N_DAYS; i++)
+		al_day[i] = pill_button(row, day_names[i], 172, 64, tiny, on_edit_day,
+					(void *)(intptr_t)i);
+
+	row = lv_obj_create(al_edit);
+	lv_obj_remove_style_all(row);
+	lv_obj_set_size(row, LV_PCT(100), LV_SIZE_CONTENT);
+	lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW);
+	lv_obj_set_flex_align(row, LV_FLEX_ALIGN_SPACE_EVENLY, LV_FLEX_ALIGN_CENTER,
+			      LV_FLEX_ALIGN_CENTER);
+	pill_button(row, "Cancel", 300, 80, small, on_edit_cancel, NULL);
+	pill_button(row, "Save", 300, 80, small, on_edit_save, NULL);
+
+	lv_timer_create(check_alarm_editor, 1000, NULL);
+}
+
 static lv_obj_t *alarm_button(lv_obj_t *parent, const char *text, const char *cmd, int w,
 			      uint32_t bg, const lv_font_t *font)
 {
@@ -1251,8 +1614,8 @@ static lv_obj_t *alarm_button(lv_obj_t *parent, const char *text, const char *cm
 	return b;
 }
 
-static void create_alarm_views(lv_obj_t *scr, const lv_font_t *big, const lv_font_t *medium,
-			       const lv_font_t *small)
+static void create_alarm_views(lv_obj_t *scr, const lv_font_t *big, const lv_font_t *wheel,
+			       const lv_font_t *medium, const lv_font_t *small, const lv_font_t *tiny)
 {
 	lv_obj_t *row, *l;
 
@@ -1277,7 +1640,9 @@ static void create_alarm_views(lv_obj_t *scr, const lv_font_t *big, const lv_fon
 	lv_obj_set_style_text_font(alarm_bell_text, small, 0);
 	lv_obj_set_style_text_color(alarm_bell_text, lv_color_hex(0x707070), 0);
 
-	/* ringing */
+	create_alarm_editor(scr, wheel, medium, small, tiny);
+
+	/* ringing: above the editor */
 	alarm_panel = lv_obj_create(scr);
 	lv_obj_remove_style_all(alarm_panel);
 	lv_obj_set_size(alarm_panel, SCREEN_W, SCREEN_H);
@@ -1311,7 +1676,7 @@ int main(int argc, char **argv)
 {
 	static uint32_t draw_buf[2][SCREEN_W * DRAW_LINES];
 	lv_display_t *disp;
-	lv_font_t *big, *medium, *small, *tiny;
+	lv_font_t *big, *wheel, *medium, *small, *tiny;
 	lv_obj_t *scr, *weather_row;
 	void *ttf;
 	size_t ttf_len = 0;
@@ -1359,6 +1724,7 @@ int main(int argc, char **argv)
 	lv_display_set_flush_cb(disp, flush_cb);
 
 	big = lv_tiny_ttf_create_data(ttf, ttf_len, 240);
+	wheel = lv_tiny_ttf_create_data(ttf, ttf_len, 64);
 	medium = lv_tiny_ttf_create_data(ttf, ttf_len, 44);
 	small = lv_tiny_ttf_create_data(ttf, ttf_len, 36);
 	tiny = lv_tiny_ttf_create_data(ttf, ttf_len, 26);
@@ -1398,8 +1764,10 @@ int main(int argc, char **argv)
 	create_forecast_panel(scr, small);
 	create_now_playing(scr, medium, small, tiny);
 	create_volume_panel(scr);
-	create_alarm_views(scr, big, medium, small);
-	lv_obj_add_event_cb(scr, on_tap, LV_EVENT_CLICKED, NULL);
+	create_alarm_views(scr, big, wheel, medium, small, tiny);
+	/* tap: the forecast; long-press: the alarms (a long press isn't also a tap) */
+	lv_obj_add_event_cb(scr, on_tap, LV_EVENT_SHORT_CLICKED, NULL);
+	lv_obj_add_event_cb(scr, on_long_press, LV_EVENT_LONG_PRESSED, NULL);
 
 	touch_fd = open(TOUCH_DEV, O_RDONLY | O_NONBLOCK);
 	if (touch_fd >= 0) {

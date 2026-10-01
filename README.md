@@ -31,7 +31,7 @@ soldering anything. A USB-A-to-USB-A cable is the only extra hardware.
 | Home Assistant | 🟡 | Weather and forecast on the clock face; see [09](docs/09-home-assistant.md) |
 | Music | ✅ | Music Assistant player (squeezelite, Spotify Connect via MA); one volume shared with the buttons; see [09](docs/09-home-assistant.md#music-music-assistant) |
 | Now playing | ✅ | Cover, title, progress and touch controls; see [09](docs/09-home-assistant.md#now-playing) |
-| Alarms | ✅ | Set in Home Assistant helpers, ring offline too; music or chime, fade-in, snooze; see [09](docs/09-home-assistant.md#alarms) |
+| Alarms | ✅ | Set in Home Assistant helpers or on the clock, ring offline too; music or chime, fade-in, snooze; see [09](docs/09-home-assistant.md#alarms) |
 
 A reference of every chip, bus address, GPIO and partition found along the way is in
 [docs/hardware.md](docs/hardware.md).
