@@ -84,6 +84,14 @@ repeating while held), `BOTH`, `BOTH_LONG` (2 s), and `MIC_OFF`/`MIC_ON` for the
 the back (also in `/run/clock/mic`). A press waits 150 ms for the other button, so pressing
 both doesn't change the volume. Volume up and down are the only actions set so far.
 
+## A trap: the codec's headphone calibration
+
+Reading the MT8167 codec's **"HP DC Offsets"** mixer control the first time after boot runs
+a headphone DC-offset calibration that plays through the DL1 memif and then switches the
+whole audio front-end off, silently stopping the speaker if it's playing (any program that
+opens the ALSA mixer reads every control). `rcS` reads it at boot, before any audio. Details
+in [10](10-bluetooth.md).
+
 ## Other chips the app drives
 
 The same app also talks to a **Bosch BMA253 accelerometer** (`0-0018`, chip ID `0xfa`;

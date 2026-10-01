@@ -37,21 +37,25 @@ and `bt-agent -c NoInputNoOutput` (bluez-tools), which accepts pairing without a
 [`/etc/bluetooth/main.conf`](../rootfs-overlay/etc/bluetooth/main.conf) names it "Smart Clock",
 makes it a loudspeaker, always discoverable and pairable. About 15 MB of RAM, no CPU while idle.
 
-- **The speaker freeze.** When a phone's Bluetooth audio first starts after boot, the
-  speaker's playback pointer stops moving while ALSA still reports the stream running, and
-  every client of the shared `dmix` blocks. Caught with a boot-time logger: it happens the
-  moment `bluealsa-aplay` first opens the speaker after boot, i.e. the first Bluetooth
-  playback; later ones, and the same player restarted, work. Ruled out: a second 44.1 or
-  48 kHz client (same buffer settings), a clock step, an HCI reset, and the driver's
-  configuration of the chip's PCM/I2S pins (a build that skips it, `skip_i2s`, froze the
-  same way). Root cause unknown. Two services work around it, for every player: an `aplay`
-  of silence keeps the stream fed, and
-  [`clock-audio-watchdog`](../rootfs-overlay/usr/local/bin/clock-audio-watchdog) kills
-  whatever holds the speaker when its pointer hasn't moved for ~3/4 s (checked 4 times a
-  second; ~1% of a core). They're respawned, so the first Bluetooth playback after boot
-  starts about a second late.
+- **The speaker froze at the first Bluetooth playback after each boot** (solved). The
+  speaker's playback pointer stopped at the end of its buffer while ALSA still reported the
+  stream running, so every client of the shared `dmix` blocked. Tracing showed the audio
+  interrupts stopping with no stop from the audio driver; a register monitor
+  ([`kernel/debug/afewatch`](../kernel/debug/afewatch/afewatch.c), polling the AFE every
+  2 ms) then caught another memif (DL1) being switched on and the whole front-end
+  (`AFE_DAC_CON0` bit 0) switched off, twice, with no ALSA trigger. The culprit is the
+  MT8167 codec driver's headphone DC calibration, which runs (once per channel) the first
+  time anything reads its **"HP DC Offsets"** mixer control: `bluealsa-aplay` opens the ALSA
+  mixer when a stream starts, and loading a mixer reads every control. The calibration plays
+  through DL1 and its cleanup clears the global AFE enable regardless of what else is
+  playing. Any program opening the mixer would have done it. `rcS` now reads that control
+  at boot, before any audio, as Android presumably did.
+  On the way, these were ruled out: a second 44.1/48 kHz client, a clock step, HCI resets,
+  the driver's PCM/I2S pin setup (`skip_i2s` experiment), dmix period size, and interrupt
+  latency on the single online core.
 - Codec: SBC only (`-c -aac`); the first attempt, with AAC, hit the freeze above, so AAC may
-  well work.
+  well work. `dmix` uses 100 ms periods (bluez-alsa's advice for resampled 44.1 kHz
+  Bluetooth audio).
 - **Reconnecting after a reboot** needs the device trusted: BlueZ otherwise asks the agent
   to authorize each profile connection, and `bt-agent` refuses.
   [`clock-bt-trust`](../rootfs-overlay/usr/local/bin/clock-bt-trust) trusts paired devices.

@@ -35,6 +35,13 @@ echo 0 > /proc/sys/debug/exception-trace 2>/dev/null
 hostname -F /etc/hostname
 ifconfig lo 127.0.0.1 up
 
+# Run the codec's headphone DC calibration now, before any audio plays. The MT8167 codec
+# driver calibrates the first time anything reads its "HP DC Offsets" control (any program
+# opening the ALSA mixer reads every control, e.g. bluealsa-aplay), borrowing the DL1
+# playback path and then switching off the whole audio front-end (AFE_DAC_CON0 bit 0),
+# which silently stops the speaker's stream if one is playing. Android read it at startup.
+amixer -c 0 cget name="HP DC Offsets" >/dev/null 2>&1
+
 # Speaker amp (TAS5805M on i2c-2) needs userspace setup; see the script.
 /etc/clock/audio-init.sh
 mkdir -p /run/dbus /var/lib/bluealsa

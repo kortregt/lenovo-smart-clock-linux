@@ -13,12 +13,6 @@ ttyGS0::respawn:/sbin/getty -n -l /usr/local/bin/autologin 0 ttyGS0 vt100
 ::respawn:/usr/local/bin/clock-alarm
 # Backlight from the ambient light sensor.
 ::respawn:/usr/local/bin/autobright
-# Keep the shared speaker (dmix) fed with silence. MediaTek's audio stops its DMA if the
-# stream runs dry right after starting, while ALSA still reports it running, and players that
-# don't recover (bluealsa-aplay) then hang; with this the stream never runs dry. ~2.5% of a core.
-::respawn:/usr/bin/aplay -q -D default -t raw -f S16_LE -r 48000 -c 2 -B 1000000 -F 250000 /dev/zero
-# ...and restart it if it freezes anyway (see the script).
-::respawn:/usr/local/bin/clock-audio-watchdog
 # Buttons and mic switch (actions in /etc/clock/keys.conf).
 ::respawn:/usr/local/bin/clockkeys
 # Music Assistant player (squeezelite): finds the server itself; plays through the shared
@@ -32,7 +26,7 @@ ttyGS0::respawn:/sbin/getty -n -l /usr/local/bin/autologin 0 ttyGS0 vt100
 ::respawn:/bin/sh -c "sleep 2; exec /usr/lib/bluetooth/bluetoothd -n"
 ::respawn:/bin/sh -c "while [ ! -e /dev/stpbt ]; do sleep 2; done; sleep 1; exec /usr/local/sbin/btrelay"
 ::respawn:/bin/sh -c "sleep 5; exec /usr/bin/bluealsa -p a2dp-sink -c -aac -S"
-::respawn:/bin/sh -c "sleep 6; exec /usr/bin/bluealsa-aplay -D default --single-audio --pcm-buffer-time=1000000"
+::respawn:/bin/sh -c "until pidof bluealsa >/dev/null; do sleep 1; done; exec /usr/bin/bluealsa-aplay -D default --single-audio --pcm-buffer-time=1000000"
 ::respawn:/bin/sh -c "sleep 6; exec /usr/bin/bt-agent -c NoInputNoOutput"
 ::respawn:/bin/sh -c "sleep 8; exec /usr/local/bin/clock-bt-trust"
 ::respawn:/sbin/watchdog -F -t 5 -T 30 /dev/watchdog

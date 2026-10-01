@@ -20,3 +20,11 @@ __pycache__/
 *.pyc
 
 .DS_Store
+# out-of-tree kernel module build products (kernel/debug)
+*.ko
+*.o
+*.mod.c
+.*.cmd
+.tmp_versions/
+Module.symvers
+modules.order
