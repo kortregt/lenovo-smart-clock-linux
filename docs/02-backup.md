@@ -41,6 +41,16 @@ mtk r preloader boot1.bin --parttype boot1   # preloader (eMMC boot area 1)
 mtk r preloader boot2.bin --parttype boot2   # eMMC boot area 2 (empty on this unit)
 ```
 
+The image is mostly empty space and compresses to under a tenth of its size (7.3 GiB to
+about 0.7 GiB here). To keep it compressed, check it against the original's checksum, then
+remove the original:
+
+```sh
+zstd -T0 -10 --long=27 full_user.bin -o full_user.bin.zst
+zstd -dc --long=27 full_user.bin.zst | shasum -a 256     # must match full_user.bin's
+zstd -d --long=27 full_user.bin.zst                      # back to full_user.bin, to restore
+```
+
 Then split the full image into partitions and sanity-check each one:
 
 ```sh
