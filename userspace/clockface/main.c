@@ -264,6 +264,7 @@ static lv_obj_t *big_time_create(lv_obj_t *parent, const lv_font_t *font, uint32
 	lv_obj_remove_style_all(row);
 	lv_obj_set_size(row, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
 	lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW);
+	lv_obj_set_clickable(row, false);	/* taps go through to the screen, as on a label */
 	for (i = 0; i < 3; i++) {
 		l = lv_label_create(row);
 		lv_label_set_text(l, i == 1 ? ":" : "");
@@ -1781,6 +1782,7 @@ int main(int argc, char **argv)
 	lv_obj_set_flex_align(weather_row, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER,
 			      LV_FLEX_ALIGN_CENTER);
 	lv_obj_set_style_pad_column(weather_row, 6, 0);
+	lv_obj_set_clickable(weather_row, false);	/* the screen's tap; the bell has its own */
 	lv_obj_align(weather_row, LV_ALIGN_CENTER, 0, 165);
 
 	icon_create(&weather_icon, weather_row, 0, icon_buf);
