@@ -107,3 +107,13 @@ fastboot set_active a
 ```
 
 Slot A (`boot_a`, `system_a`, `vendor_a`) is never modified by any of this.
+
+To come back, `fastboot set_active b` from fastboot mode. That leaves slot B with retries
+counting down and not "successful", so once Alpine is up, write the A/B block above again
+(or the 32 bytes saved from `misc` before switching), or the bootloader returns to Android
+after a few boots.
+
+On this unit, stock Android no longer gets past its boot animation, neither from storage nor
+with `fastboot boot` of the original `boot_a` (which reached the "set up with Google Home"
+screen once, right after the AVB unlock). Slot A is unchanged, so it's probably Android's own
+state in `userdata`; with no adb or serial console on this build, it wasn't pursued.
